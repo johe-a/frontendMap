@@ -1,0 +1,39 @@
+# 题目
+请实现一个函数，用来判断一颗二叉树是不是对称的。注意，如果一个二叉树同此二叉树的镜像是同样的，定义其为对称的
+
+# 思路
+二叉树的右子树是二叉树左子树的镜像二叉树。
+
+镜像二叉树：两颗二叉树根结点相同，但他们的左右两个子节点交换了位置。
+
+![对称二叉树](https://tva1.sinaimg.cn/large/0082zybpgy1gc7haylaw1j30v60aw75d.jpg)
+
+对称二叉树有以下规律：
+- 根结点相同
+- 左子树的左结点等于右子树的右结点
+- 左子树的右节点等于右子树的左节点
+
+所以我们用两个相同的二叉树，依照以上的遍历过程来判断即可
+
+```javascript
+function isSymmetrical(pRoot){
+  return isSymmetricalTree(pRoot,pRoot)
+}
+
+function isSymmetricalTree(root1,root2){
+  //如果根结点为空，代表相等
+  if(!root1&&!root2){
+    return false
+  }
+  //如果根结点有一个为空，则不相等
+  if(!root1||!root2){
+    return false
+  }
+  //根结点相等，切不为空，则判断第二第三步
+  //判断左子树的左结点与右子树的右结点是否相等
+  return isSymmetricalTree(root1.left,root2.right) &&
+  isSymeticalTree(root1.right,root2.left)  //判断左子树的右结点与右子树的左结点是否相等
+
+}
+
+```
