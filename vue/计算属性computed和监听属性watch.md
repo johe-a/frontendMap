@@ -105,6 +105,8 @@ export function defineComputed (
 }
 
 ```
+应该注意到，一个computed属性，也需要被数据劫持监听
+
 createComputedGetter的定义
 ```javascript
 
@@ -119,3 +121,38 @@ function createComputedGetter (key) {
 }
 
 ```
+***在defineReactive中，被劫持的数据会在getter中进行依赖收集，这里的作用也是进行依赖收集，并返回值
+也就是说computed Watcher应该不仅保存着它依赖数据的Dep,还应该维护着一个Dep订阅者中心来保存依赖当前计算属性值的Watcher***
+
+在Compile阶段，会对元素进行遍历，对于文本节点会查看其是否包含{{}}指令，对于元素节点会对属性进行遍历，查看是否存在v-text之类的指令，生成Watcher实例绑定指令对应的视图更新函数与被依赖数据,查看以下实例
+```vue
+<template>
+    <div>
+        <span v-text="fullName"></span>
+    </div>
+</template>
+
+<script>
+export default {
+  data() {
+    return {
+        firstName:'johe',
+        secondName:'test'
+    }
+  },
+  computed:{
+      fullName(){
+          return this.fistName + ' ' +this.secondName
+      }
+  }
+}
+</script>
+
+```
+在Compile阶段，会对span的属性进行遍历，当遍历到v-text时，会为其绑定text对应的视图更新函数和被依赖数据，是通过实例化Watcher来进行绑定的(Watcher被实例化后，会获取当前表达式值，获取值的过程触发被依赖数据的getter，getter会在被依赖数据的Dep中添加Watcher，从而Watcher与被依赖数据产生绑定。而Watcher通过回调函数内的闭包，保存着对应元素节点的视图更新函数，从而实现视图更新函数与被依赖数据的绑定)。同理，***当计算属性fullName在Compile阶段被触发getter时，应该收集当前被渲染元素节点span的Watcher实例，这个收集过程是通过Computed Watcher实现的***
+即Computed Watcher不仅依赖着它的getter中的数据，例如上图的this.firstName和this.secondName,也同时被元素节点对应的Watcher依赖。
+
+
+
+
+
