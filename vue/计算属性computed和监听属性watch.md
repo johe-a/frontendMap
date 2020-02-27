@@ -154,8 +154,10 @@ export default {
 </script>
 
 ```
-在Compile阶段，会对span的属性进行遍历，当遍历到v-text时，会为其绑定text对应的视图更新函数和被依赖数据，是通过实例化Watcher来进行绑定的(Watcher被实例化后，会获取当前表达式值，获取值的过程触发被依赖数据的getter，getter会在被依赖数据的Dep中添加Watcher，从而Watcher与被依赖数据产生绑定。而Watcher通过回调函数内的闭包，保存着对应元素节点的视图更新函数，从而实现视图更新函数与被依赖数据的绑定)。同理，***当计算属性fullName在Compile阶段被触发getter时，应该收集当前被渲染元素节点span的Watcher实例，这个收集过程是通过Computed Watcher实现的***
-即Computed Watcher不仅依赖着它的getter中的数据，例如上图的this.firstName和this.secondName,也同时被元素节点对应的Watcher依赖。
+
+在Compile阶段，会对span的属性进行遍历，当遍历到v-text时，会为其绑定text对应的视图更新函数和被依赖数据，是通过实例化Watcher来进行绑定的。同理，***当计算属性fullName在Compile阶段被触发getter时，应该收集当前被渲染元素节点span的Watcher实例，这个收集过程是通过Computed Watcher实现的***
+
+所以Computed Watcher不仅依赖着它的getter中的数据，例如上图的this.firstName和this.secondName,也同时被元素节点对应的Watcher依赖。
 
 
 
