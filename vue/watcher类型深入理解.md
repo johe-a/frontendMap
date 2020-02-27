@@ -1,10 +1,27 @@
-# computed
+# watcher类型
+Watcher 的构造函数对 options 做的了处理，代码如下：
+```
+if (options) {
+  this.deep = !!options.deep
+  this.user = !!options.user
+  this.computed = !!options.computed
+  this.sync = !!options.sync
+  // ...
+} else {
+  this.deep = this.user = this.computed = this.sync = false
+}
+```
+所以watcher总共有四种类型
 
-执行流程图和原理如下图
+## computed 
+
+计算属性实质上等同于computed watcher
+
+初始化Computed执行流程图和原理如下图
 
 ![](https://tva1.sinaimg.cn/large/0082zybpgy1gcatvk1585j310r0e3juj.jpg)
 
-## initComputed
+### initComputed
 计算属性的初始化时发生在Vue实例初始化阶段的initState函数中的,执行了
 
 ```javscript
@@ -69,7 +86,7 @@ function initComputed (vm: Component, computed: Object) {
 2. computed创建的Watcher实例是一个Computed watcher
 3. computed的属性不能与data和props中的重复
 
-## defineComputed
+### defineComputed
 ```javascript
 export function defineComputed (
   target: any,
@@ -129,7 +146,7 @@ function createComputedGetter (key) {
 ***在defineReactive中，被劫持的数据会在getter中进行依赖收集，这里的作用也是进行依赖收集，并返回值
 也就是说computed Watcher应该不仅保存着它依赖数据的Dep,还应该维护着一个Dep订阅者中心来保存依赖当前计算属性值的Watcher***
 
-## Computed Watcher
+### Computed Watcher
 
 Computed Watcher完成两项工作：
 
@@ -391,7 +408,7 @@ export default class Dep {
 所以Computed Watcher不仅依赖着它的getter中的数据，例如上图的this.firstName和this.secondName,也同时被元素节点对应的Watcher依赖。
 
 
-## 计算属性依赖数据的绑定
+### 计算属性依赖数据的绑定
 fullName计算属性同时依赖着firstName和secondName，那么在fullName执行getter函数的时候，会触发firstName和secondName的getter，在getter中firstName的Dep和secondName的Dep完成了对Computed Watcher的依赖收集。
 当firstName或者secondName更新时，setter函数被调用，通过Dep去发布更新的通知，调用Computed Watcher的update方法
 ```javascript
@@ -453,6 +470,259 @@ getAndInvoke (cb: Function) {
 假设目前有元素节点依赖当前计算属性，则会调用getAndInvoke()方法,方法首先对计算属性进行求值，然后再调用Dep.notify通知依赖计算属性的Watcher进行视图更新。
 
 ![](https://tva1.sinaimg.cn/large/0082zybpgy1gcazpzoxjgj325g0g4af4.jpg)
+
+### 从源码总结
+由以上可以总结:
+1. computed的配置方式除了函数还可以是对象
+```
+...
+computed:{
+    fullName(){
+        return this.firstName + this.secondName
+    }
+}
+...
+//等同于
+computed:{
+    fullName:{
+        get(){        
+            return this.firstName + this.secondName
+        }
+        set(){
+             ...
+        }
+    }
+}
+
+```
+2. computed getter函数内所有响应式数据的更新都会引起计算属性的更新，例如this.firstName和this.secondName
+3. computed Watcher有两种模式，当没有视图依赖计算属性的时候，当前computed Watcher处于lazy状态，否则处于active,处于lazy状态时，即使getter函数内依赖数据的更新，也不会引起计算属性的更新（下次有人订阅这个计算属性的时候再求值）
+4. 计算属性的Watcher被保存在当前vm实例的_computedWatchers中
+![](https://tva1.sinaimg.cn/large/0082zybpgy1gcb0a5z2jyj30800983z7.jpg)
+5. computed watcher不仅保存着getter中依赖数据的Dep，还要保存依赖当前计算属性的Watcher到Dep中
+
+
+## watch
+侦听属性的初始化也是发生在Vue实例初始化阶段的initState函数中，在computed初始化之后:
+```javascript
+if (opts.watch && opts.watch !== nativeWatch) {
+  initWatch(vm, opts.watch)
+}
+
+function initWatch (vm: Component, watch: Object) {
+  for (const key in watch) {
+    const handler = watch[key]
+    if (Array.isArray(handler)) {
+      for (let i = 0; i < handler.length; i++) {
+        createWatcher(vm, key, handler[i])
+      }
+    } else {
+      createWatcher(vm, key, handler)
+    }
+  }
+}
+
+function createWatcher (
+  vm: Component,
+  expOrFn: string | Function,
+  handler: any,
+  options?: Object
+) {
+  if (isPlainObject(handler)) {
+    options = handler
+    handler = handler.handler
+  }
+  if (typeof handler === 'string') {
+    handler = vm[handler]
+  }
+  return vm.$watch(expOrFn, handler, options)
+}
+```
+这一块的处理逻辑就是循环遍历watch的属性，取到对应的handler和其余配置选项，调用$watch.
+$watch是Vue原型上的方法，是在执行stateMixin的时候定义的
+```javascirpt
+Vue.prototype.$watch = function (
+  expOrFn: string | Function,
+  cb: any,
+  options?: Object
+): Function {
+  const vm: Component = this
+  if (isPlainObject(cb)) {
+    return createWatcher(vm, expOrFn, cb, options)
+  }
+  options = options || {}
+  options.user = true
+  const watcher = new Watcher(vm, expOrFn, cb, options)
+  if (options.immediate) {
+    cb.call(vm, watcher.value)
+  }
+  return function unwatchFn () {
+    watcher.teardown()
+  }
+}
+```
+$watch实例化一个user watcher,因为options.user = ture,通过实例化watcher的方式，绑定expOrFn即watch的属性与回调函数cb，一旦expOrFn的值发生改变，就会调用watcher的run方法，执行回调函数cb。并且如果我们设置了immediate为true，会立即执行回调函数cb.最后返回一个unwatchFn方法，它会调用teardown方法移除这个watcher
+
+
+### user watch源码总结
+从源码总结：
+1. watch支持对同一个key应用多个处理函数,所以配置项可以是一个handler数组
+2. 配置项可以是对象，hanlder.handler为回调函数，其余为配置
+3. 配置项可以是字符串，为methods中的函数名
+
+```
+watch: {
+    flag: [function (newVal, oldVal) {
+     
+    }]
+}
+//或者
+watch: {
+    flag(newVal, oldVal) {
+     
+    }
+}
+//或者
+watch:{
+    flag:{
+        handler(newVal,oldVal){
+        
+        }
+    }
+}
+//或者
+watch:{
+    flag:{
+        [
+            {
+                handler(newVal,oldVal){
+                
+                }
+            }
+        ]
+    }
+}
+```
+4. $watch方法或者watch配置的侦听属性，都会创建一个user watcher,并且如果在配置项中使用immediate，可以使得侦听回调立即执行
+5. user wathcher本质上是被监听属性与cb的绑定，或者是包含被监听属性的函数与cb的绑定
+```
+// this.flag改变时，会调用cb
+this.$watch(() => {
+    return this.flag
+  }, (newVal, oldVal) => {
+    //do something
+})
+```
+
+
+## deep watcher
+通常，如果我们想对一下对象做深度观测的时候，需要设置这个属性为 true，考虑到这种情况:
+```javascript
+var vm = new Vue({
+  data() {
+    a: {
+      b: 1
+    }
+  },
+  watch: {
+    a: {
+      handler(newVal) {
+        console.log(newVal)
+      }
+    }
+  }
+})
+vm.a.b = 2
+
+```
+此时不会log任何数据，因为我们watch了a对象，只触发了a对象的getter没有触发a.b对象的getter，所以a.b依赖没有收集到当前cb的依赖
+通过配置属性deep，会调用traverse()函数递归的深层次访问子对象，触发他们的getter进行依赖收集(在这个时期内Dep.target都指向user watcher)
+
+```
+class Watcher{
+    get() {
+      let value = this.getter.call(vm, vm)
+      // ...
+      if (this.deep) {
+        traverse(value)
+      }
+    }
+}
+const seenObjects = new Set()
+
+/**
+ * Recursively traverse an object to evoke all converted
+ * getters, so that every nested property inside the object
+ * is collected as a "deep" dependency.
+ */
+export function traverse (val: any) {
+  _traverse(val, seenObjects)
+  seenObjects.clear()
+}
+
+function _traverse (val: any, seen: SimpleSet) {
+  let i, keys
+  const isA = Array.isArray(val)
+  //这里可以看到如果是frozen对象，是不会访问的
+  if ((!isA && !isObject(val)) || Object.isFrozen(val) || val instanceof VNode) {
+    return
+  }
+  if (val.__ob__) {
+    //防止重复访问
+    const depId = val.__ob__.dep.id
+    if (seen.has(depId)) {
+      return
+    }
+    seen.add(depId)
+  }
+  if (isA) {
+    //是数组则访问数组的每个成员
+    i = val.length
+    while (i--) _traverse(val[i], seen)
+  } else {
+    //对象则访问每个属性
+    keys = Object.keys(val)
+    i = keys.length
+    while (i--) _traverse(val[keys[i]], seen)
+  }
+}
+```
+### 源码总结
+- deep属性帮助我们对对象深层次的监听，但是会花费一定的性能开销。所以要权衡是否开启这个配置。
+- 如果对象被Object.freeze冻结了，即使使用deep，也无法监听
+
+## user watcher
+$watch创建的是user watcher,user watcher仅仅只是增加了错误警告提示
+
+## sync watcher(同步)
+
+当响应式数据发送变化后，触发了watcher.update(),只是把这个watcher推送到一个队列中，在nextTick后才会真正执行watcher的回调函数。而一旦我们设置了 sync，就可以在当前Tick中同步执行watcher的回调函数。
+
+只有当我们需要 watch 的值的变化到执行 watcher 的回调函数是一个同步过程的时候才会去设置该属性为 true。
+
+```
+update () {
+  if (this.computed) {
+    // ...
+  } else if (this.sync) {
+    this.run()
+  } else {
+    queueWatcher(this)
+  }
+}
+
+```
+###源码总结
+- 如果设置了sync选项为true,则会在当前Tick中同步执行wathcer回调函数，否则会在nextTick中执行
+
+
+
+
+
+
+
+
+
 
 
 
