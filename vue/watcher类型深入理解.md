@@ -1,6 +1,6 @@
 # watcher类型
 Watcher 的构造函数对 options 做的了处理，代码如下：
-```
+```javascript
 if (options) {
   this.deep = !!options.deep
   this.user = !!options.user
@@ -24,7 +24,7 @@ if (options) {
 ### initComputed
 计算属性的初始化时发生在Vue实例初始化阶段的initState函数中的,执行了
 
-```javscript
+```javascript
 if(opts.computed){
     initComputed(vm,opts.computed)
 }
