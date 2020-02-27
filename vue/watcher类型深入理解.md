@@ -370,7 +370,7 @@ Dep.depend()会调用当前元素节点对应的Watcher.addDep(),在调用Dep.ad
 元素节点```<span v-text="fullName"></span>```生成渲染Watcher->触发计算属性fullName的getter->调用Computed Watcher的Depend->调用Dep.depend()->调用渲染Watcher的addDep收集计算属性的Dep->调用计算属性Dep.addSub收集当前渲染Watcher.完成双向绑定
 
 回顾下Dep类：
-```
+```javascript
 export default class Dep {
   static target: ?Watcher;
   id: number;
@@ -474,7 +474,7 @@ getAndInvoke (cb: Function) {
 ### 从源码总结
 由以上可以总结:
 1. computed的配置方式除了函数还可以是对象
-```
+```javascript
 ...
 computed:{
     fullName(){
@@ -572,7 +572,7 @@ $watch实例化一个user watcher,因为options.user = ture,通过实例化watch
 2. 配置项可以是对象，hanlder.handler为回调函数，其余为配置
 3. 配置项可以是字符串，为methods中的函数名
 
-```
+```javascript
 watch: {
     flag: [function (newVal, oldVal) {
      
@@ -607,7 +607,7 @@ watch:{
 ```
 4. $watch方法或者watch配置的侦听属性，都会创建一个user watcher,并且如果在配置项中使用immediate，可以使得侦听回调立即执行
 5. user wathcher本质上是被监听属性与cb的绑定，或者是包含被监听属性的函数与cb的绑定
-```
+```javascript
 // this.flag改变时，会调用cb
 this.$watch(() => {
     return this.flag
@@ -640,7 +640,7 @@ vm.a.b = 2
 此时不会log任何数据，因为我们watch了a对象，只触发了a对象的getter没有触发a.b对象的getter，所以a.b依赖没有收集到当前cb的依赖
 通过配置属性deep，会调用traverse()函数递归的深层次访问子对象，触发他们的getter进行依赖收集(在这个时期内Dep.target都指向user watcher)
 
-```
+```javascript
 class Watcher{
     get() {
       let value = this.getter.call(vm, vm)
@@ -702,7 +702,7 @@ $watch创建的是user watcher,user watcher仅仅只是增加了错误警告提�
 
 只有当我们需要 watch 的值的变化到执行 watcher 的回调函数是一个同步过程的时候才会去设置该属性为 true。
 
-```
+```javascript
 update () {
   if (this.computed) {
     // ...
@@ -714,7 +714,7 @@ update () {
 }
 
 ```
-###源码总结
+### 源码总结
 - 如果设置了sync选项为true,则会在当前Tick中同步执行wathcer回调函数，否则会在nextTick中执行
 
 
