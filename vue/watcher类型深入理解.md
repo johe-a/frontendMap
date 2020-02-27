@@ -408,7 +408,7 @@ export default class Dep {
 所以Computed Watcher不仅依赖着它的getter中的数据，例如上图的this.firstName和this.secondName,也同时被元素节点对应的Watcher依赖。
 
 
-### 计算属性依赖数据的绑定
+### 计算属性与依赖数据的绑定
 fullName计算属性同时依赖着firstName和secondName，那么在fullName执行getter函数的时候，会触发firstName和secondName的getter，在getter中firstName的Dep和secondName的Dep完成了对Computed Watcher的依赖收集。
 当firstName或者secondName更新时，setter函数被调用，通过Dep去发布更新的通知，调用Computed Watcher的update方法
 ```javascript
@@ -499,7 +499,9 @@ computed:{
 3. computed Watcher有两种模式，当没有视图依赖计算属性的时候，当前computed Watcher处于lazy状态，否则处于active,处于lazy状态时，即使getter函数内依赖数据的更新，也不会引起计算属性的更新（下次有人订阅这个计算属性的时候再求值）
 4. 计算属性的Watcher被保存在当前vm实例的_computedWatchers中
 ![](https://tva1.sinaimg.cn/large/0082zybpgy1gcb0a5z2jyj30800983z7.jpg)
-5. computed watcher不仅保存着getter中依赖数据的Dep，还要保存依赖当前计算属性的Watcher到Dep中
+5. computed watcher不仅保存着getter中依赖数据的Dep，还要保存依赖当前计算属性的Watcher到Dep中,这是与其他Watcher最大的区别
+6. computed watcher本质上是对计算属性的getter和计算属性的dep发布函数(即getAndInvoke)与依赖数据的绑定
+
 
 
 ## watch
@@ -717,6 +719,11 @@ update () {
 
 
 
+#总结
+除了各项watcher的总结，我们在使用watch的时候可以用到以下配置
+- immediate:立即执行watch的回调
+- deep:深层次监听
+- sync:同步执行回调，只有当watch值的变化到执行回调函数是一个同步过程的时候才使用
 
 
 
