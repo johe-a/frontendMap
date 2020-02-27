@@ -725,6 +725,8 @@ update () {
 - deep:深层次监听
 - sync:同步执行回调，只有当watch值的变化到执行回调函数是一个同步过程的时候才使用
 
+各项watcher会被汇总到vm实例的_watchers中
+
 
 
 
