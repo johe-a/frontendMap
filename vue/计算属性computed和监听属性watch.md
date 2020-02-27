@@ -1,4 +1,9 @@
 # computed
+
+执行流程图和原理如下图
+
+![](https://tva1.sinaimg.cn/large/0082zybpgy1gcatvk1585j310r0e3juj.jpg)
+
 ## initComputed
 计算属性的初始化时发生在Vue实例初始化阶段的initState函数中的,执行了
 
