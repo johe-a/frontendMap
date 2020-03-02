@@ -151,7 +151,7 @@ Blob URL可以通过URL.createObjectURL(blob)创建，在绝大部分场景下�
 ![](https://tva1.sinaimg.cn/large/00831rSTgy1gcg39gjalcj30zk0993zy.jpg)
 
 ***作为图片资源地址***
-```
+```javascript
 <!DOCTYPE html>
 <html lang="en">
 
@@ -179,4 +179,75 @@ Blob URL可以通过URL.createObjectURL(blob)创建，在绝大部分场景下�
 
 </html>
 
+```
+在network标签栏下能够发现这个Blob URL的请求信息
+
+
+#### Blob URL和Data URL的区别
+还可以使用Data URL方式加载图片资源：
+```
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Blob Test</title>
+    <script>
+        function handleFile(e) {
+            var file = e.files[0];
+            var fileReader = new FileReader();
+            var img = document.getElementsByTagName("img")[0];
+            fileReader.onload = function(e) {
+                img.src = e.target.result;
+            }
+            fileReader.readAsDataURL(file);
+        }
+    </script>
+</head>
+
+<body>
+    <input type="file" accept="image/*" onchange="handleFile(this)" />
+    <br/>
+    <img style="width:200px;height:200px">
+</body>
+
+</html>
+```
+
+FileReader的readAsDataURL生成一个Data URL，如图所示：
+![](https://tva1.sinaimg.cn/large/00831rSTgy1gcg3eu1n1rj30zk0jcjtx.jpg)
+
+web性能优化中有一项措施，把小图片用base64编码直接迁入到HTML文件中，实际上就是利用了Data URL来获取嵌入的图片数据。
+
+Blob URL和Data URL的区别
+
+- Blob URL的长度一般比较短，但Data URL因为直接存储图片base64编码后的数据，往往很长，如上图所示，浏览器在显示Data URL时使用了省略号（…）。当显式大图片时，使用Blob URL能获取更好的可能性
+- Blob URL可以方便的使用XMLHttpRequest获取源数据
+
+```javascript
+var blobUrl = URL.createObjectURL(new Blob(['Test'], {type: 'text/plain'}));
+var x = new XMLHttpRequest();
+// 如果设置x.responseType = 'blob'，将返回一个Blob对象，而不是文本:
+// x.responseType = 'blob';
+x.onload = function() {
+    alert(x.responseText);   // 输出 Test
+};
+x.open('get', blobUrl);
+x.send();
+```
+- Blob URL稚嫩挂在当前应用内部使用，把Blob URL负值到浏览器的地址中，是无法获取数据的（外部无法获取）。而Data URL可以在浏览器中使用，具有较好的移植性
+
+### 指定Type
+> 除了可以用作图片资源的网络地址，Blob URL也可以用作其他资源的网络地址，例如html文件、json文件等，为了保证浏览器能正确的解析Blob URL返回的文件类型，需要在创建Blob对象时指定相应的type
+
+```javascript
+// 创建HTML文件的Blob URL
+var data = "<div style='color:red;'>This is a blob</div>";
+var blob = new Blob([data], { type: 'text/html' });
+var blobURL = URL.createObjectURL(blob);
+
+// 创建JSON文件的Blob URL
+var data = { "name": "abc" };
+var blob = new Blob([JSON.stringify(data)], { type: 'application/json' });
+var blobURL = URL.createObjectURL(blob);
 ```
