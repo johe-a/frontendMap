@@ -1,6 +1,46 @@
 # Blob
 > Blob，Binary Large Object的缩写，代表二进制类型的大对象。Mysql中的Blob类型就表示二进制数据的容器，在Web中，Blob对象是二进制数据，但它是类似文件对象的二进制数据，因此可以操作File对象一样操作Blob对象，实际上，File继承自Blob
 
+# Blob、File、ArrayBuffer、FileList、FileReader、DataURL、BlobURL
+- Blob和ArrayBuffer都是用来存储二进制的，Blob是对象，ArrayBuffer是数组，由于ArrayBuffer是一个二进制数组，所以可以作为Blob对象的参数：
+```javascript
+//为<div> hello world</div>的二进制
+const u8Buf = new Uint8Array([60, 100, 105, 118, 62, 104, 101, 108, 108, 111, 32, 119, 111, 114, 108, 100, 60, 47, 100, 105, 118, 62]);
+const u8Blob = new Blob([u8Buf], { type: "text/html" }); // Blob {size: 22, type: "text/html"}
+```
+- ArrayBuffer不能直接操作，依赖于TypedArray视图(例如上面的Uint8Array)或者DataView对象来解释原始缓冲区。  
+- Blob对象可以直接通过slice进行内容分片，其本身只有size和type属性。  
+- File对象继承于Blob对象，并提供了name(文件名)、size(大小)、type(MIME类型)、lastModified、lastModifiedDate等信息。  
+- FileReader用于异步读取文件内容（用于读取File、Blob的内容）
+    - FileReader.readAsArrayBuffer(blob)：开始读取指定Blob中的内容，一旦完成，result属性中保存的数据是被读取文件的ArrayBuffer数据。(将blob转换成ArrayBuffer)
+    - FileReader.readAsBinaryString(blob):开始读取Blob内容，一旦完成，result属性中将包含所读取文件的原始二进制数据。
+    - FileReader.readAsDataURL(blob):开始读取指定Blob内容，一旦完成，result属性中将包含一个```data:URL```格式的字符串以表示所读取文件的内容（将blob转换成DataURL，转换成base64编码）
+    - FileReader.readAsText():开始读取指定Blob内容，一旦完成，result属性中将包含一个字符串表示所读取的文件内容
+    - FileReader.readyState
+        -  EMPTY:0 还没有加载任何数据
+        -  LOADING:1数据正在被加载
+        -  DONE:2已完成全部的读取请求
+    - FileReader.onload:事件，该事件在读取操作完成时触发
+    - FileRader.onerror:事件，该事件在读取操作发生错误时触发。
+- DataURL由FileReader.readAsDataURL(blob)生成，为一整串base64编码是一个完整的数据。BlobURL由window.URL.createObjectURL(blob)生成，是一个类似于HTTP的URL
+- FileList通常用于表单提交文件时,为文件的类数组对象
+
+```javascript
+<body>
+    <input type="file" id="file" />
+</body>
+<script>
+    window.onload = function () {
+        var fileInput = document.querySelector("#file")
+        fileInput.addEventListener("change", function (e) {
+            console.log(e.target.files)
+            console.log(this.files)
+        })
+    }
+</script>
+
+```
+
 # Blob基本用法
 ## 创建
 通过Blob的构造函数创建Blob对象：
@@ -60,7 +100,7 @@ console.log(blob2);
 ```
 
 ## Blob使用场景
-### 分片上传
+### 文件分片上传
 > File继承自Blob，所以我们可以用slice方法对大文件进行分片长传
 
 ```javascript
@@ -185,7 +225,7 @@ Blob URL可以通过URL.createObjectURL(blob)创建，在绝大部分场景下�
 
 #### Blob URL和Data URL的区别
 还可以使用Data URL方式加载图片资源：
-```
+```javascript
 <!DOCTYPE html>
 <html lang="en">
 
@@ -235,9 +275,9 @@ x.onload = function() {
 x.open('get', blobUrl);
 x.send();
 ```
-- Blob URL稚嫩挂在当前应用内部使用，把Blob URL负值到浏览器的地址中，是无法获取数据的（外部无法获取）。而Data URL可以在浏览器中使用，具有较好的移植性
+- Blob URL只能在当前应用内部使用，把Blob URL复制到浏览器的地址中，是无法获取数据的（外部无法获取）。而Data URL可以在浏览器中使用，具有较好的移植性
 
-### 指定Type
+### 指定文件类型
 > 除了可以用作图片资源的网络地址，Blob URL也可以用作其他资源的网络地址，例如html文件、json文件等，为了保证浏览器能正确的解析Blob URL返回的文件类型，需要在创建Blob对象时指定相应的type
 
 ```javascript
@@ -250,4 +290,134 @@ var blobURL = URL.createObjectURL(blob);
 var data = { "name": "abc" };
 var blob = new Blob([JSON.stringify(data)], { type: 'application/json' });
 var blobURL = URL.createObjectURL(blob);
+```
+
+## Blob和ArrayBuffer
+ArrayBuffer对象用来表示通用的、固定长度的原始二进制数据缓冲区。  
+通过```new ArrayBuffer(length)```来获得一片连续的内存空间，***它不能直接读写***，但可根据需要将其传递到TypedArray视图或者DataView对象来解释原始缓冲区。  
+实际上视图只是给我们提供了一个某种类型的读写接口，让我们可以操作ArrayBuffer里的数据。  
+TypedArray需要制定一个数组类型来保证数组成员都是一个数据类型，而DataView数组成员可以是不同的数据类型。
+
+TypedArray视图的类型数组对象：（他们的构造函数都接收一个ArrayBuffer参数进行转换，由于ArrayBuffer不能直接读取）
+- Int8Array：8位有符号整数，长度1个字节。
+- Uint8Array：8位无符号整数，长度1个字节。
+- Uint8ClampedArray：8位无符号整数，长度1个字节，溢出处理不同。
+- Int16Array：16位有符号整数，长度2个字节。
+- Uint16Array：16位无符号整数，长度2个字节。
+- Int32Array：32位有符号整数，长度4个字节。
+- Uint32Array：32位无符号整数，长度4个字节。
+- Float32Array：32位浮点数，长度4个字节。
+- Float64Array：64位浮点数，长度8个字节。
+
+
+***Blob与ArrayBuffer的区别是，除了原始字节以外它还提供了Mime type作为原数据，Blob和ArrayBuffer之间可以进行转换，File对象其实继承自Blob对象，并提供了name、lastModifiedDate、size、type等基础元数据***
+
+### Blob对象转换成ArrayBuffer
+```javascript
+//创建一个以二进制数据存储的html文件
+const text = "<div>hello world</div>"
+const blob = new Blob([text],{type:"text/html"})
+//以文本读取
+const textReader = new FileReader()
+textReader.readAsText(blob)
+textReader.onload = function(){
+    console.log(textReader.result);//<div> hello word</div>
+}
+//以ArrayBuffer读取
+const bufReader = new FileReader()
+bufReader.readAsArrayBuffer(blob)
+bufReader.onload = function(){
+    console.log(new Uint8Array(bufReader.result)) // Uint8Array(22) [60, 100, 105, 118, 62, 104, 101, 108, 108, 111, 32, 119, 111, 114, 108, 100, 60, 47, 100, 105, 118, 62]
+}
+
+```
+
+### ArrayBuffer转换成Blob
+```javascript
+const u8Buf = new Uint8Array([60, 100, 105, 118, 62, 104, 101, 108, 108, 111, 32, 119, 111, 114, 108, 100, 60, 47, 100, 105, 118, 62]);
+const u8Blob = new Blob([u8Buf], { type: "text/html" }); // Blob {size: 22, type: "text/html"}
+const textReader = new FileReader();
+
+textReader.readAsText(u8Blob);
+textReader.onload = function() {
+  console.log(textReader.result); // 同样得到div>hello world</div>
+};
+```
+
+## 从后台获取Blob(File)
+通过正确的设置responseType我们可以直接获取到Blob对象
+```javascript
+function ajax(url,cb){
+    const xhr = new XMLHttpRequest()
+    xhr.open("get",url)
+    //"text"-字符串 "blob"-Blob对象 "arraybuffer"-ArrayBuffer对象
+    xhr.responseType = "blob"
+    xhr.onload = function(){
+        cb(xhr.response)
+    }
+    xhr.send
+}
+
+```
+通过请求一个Blob对象或者ArrayBuffer再转换成Blob对象，再通过URL.createObjectURL生成BlobURL赋值给src属性即可
+```javascript
+ajax('video.mp4', function(res){
+    const src = URL.createObjectURL(res); 
+    video.src = src;
+})
+```
+
+# MediaSource(流媒体播放，视频流)
+video标签src指向一个视频地址，视频播完了再将src修改为下一段的视频地址然后播放，这显然不符合我们无缝播放的要求。其实有了我们前面Blob URL的学习，我们可能就会想到一个思路，用Blob URL指向一个视频二进制数据，然后不断将下一段视频的二进制数据添加拼接进去。这样就可以在不影响播放的情况下，不断的更新视频内容并播放下去，想想是不是有点流的意思出来了。
+
+要实现这个功能我们要通过MediaSource来实现，MediaSource接口功能也很纯粹，作为一个媒体数据容器可以和HTMLMediaElement进行绑定。基本流程就是通过URL.createObjectURL创建容器的BLob URL，设置到video标签的src上，在播放过程中，我们仍然可以通过MediaSource.appendBuffer方法往容器里添加数据，达到更新视频内容的目的。
+
+***可以理解MediaSource为一个Blob的容器，可以通过addSourceBuffer来创建一个指定类型的Blob容器，这个容器可以通过appendBuffer不断的往里面添加数据***
+
+```javascript
+const video = document.querySelector('video');
+//视频资源存放路径，假设下面有5个分段视频 video1.mp4 ~ video5.mp4，第一个段为初始化视频init.mp4
+const assetURL = "http://www.demo.com";
+//视频格式和编码信息，主要为判断浏览器是否支持视频格式，但如果信息和视频不符可能会报错
+const mimeCodec = 'video/mp4; codecs="avc1.42E01E, mp4a.40.2"'; 
+if ('MediaSource' in window && MediaSource.isTypeSupported(mimeCodec)) {
+  const mediaSource = new MediaSource();
+  video.src = URL.createObjectURL(mediaSource); //将video与MediaSource绑定，此处生成一个Blob URL
+  mediaSource.addEventListener('sourceopen', sourceOpen); //可以理解为容器打开
+} else {
+  //浏览器不支持该视频格式
+  console.error('Unsupported MIME type or codec: ', mimeCodec);
+}
+
+function sourceOpen () {
+  const mediaSource = this;
+  const sourceBuffer = mediaSource.addSourceBuffer(mimeCodec);
+  let i = 1;
+  function getNextVideo(url) {
+    //ajax代码实现翻看上文，数据请求类型为arraybuffer
+    ajax(url, function(buf) {
+      //往容器中添加请求到的数据，不会影响当下的视频播放。
+      sourceBuffer.appendBuffer(buf);
+    });
+  }
+  //每次appendBuffer数据更新完之后就会触发
+  sourceBuffer.addEventListener("updateend", function() {
+    if (i === 1) {
+      //第一个初始化视频加载完就开始播放
+      video.play();
+    }
+    if (i < 6) {
+      //一段视频加载完成后，请求下一段视频
+      getNextVideo(`${assetURL}/video${i}.mp4`);
+    }
+    if (i === 6) {
+      //全部视频片段加载完关闭容器
+      mediaSource.endOfStream();
+      URL.revokeObjectURL(video.src); //Blob URL已经使用并加载，不需要再次使用的话可以释放掉。
+    }
+    i++;
+  });
+  //加载初始视频
+  getNextVideo(`${assetURL}/init.mp4`);
+};
 ```
