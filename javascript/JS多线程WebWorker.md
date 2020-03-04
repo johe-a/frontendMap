@@ -88,7 +88,7 @@ self.close()
 
 ***主线程和Worker之间传递的数据是传值的，而不是传址的，这样避免了Worker线程操作主线程的数据，传递数据时，会调用内容的toString()方法(二进制数据除外)，再传值,所以对象尽量经过JSON.stringify后传值***
 
-主线程与worker之间可以交换二进制数据，比如File、Blob、ArrayBuffer等类型，也可以在线程之间发送，
+主线程与worker之间可以交换二进制数据，比如File、Blob、ArrayBuffer等类型，也可以在线程之间发送.
 ```javascript
 // 主线程
 var uInt8Array = new Uint8Array(new ArrayBuffer(10));
@@ -111,13 +111,14 @@ self.onmessage = function (e) {
 ```javascript
 
 // Transferable Objects 格式
-worker.postMessage(arrayBuffer, [arrayBuffer]);
+worker.postMessage(aMessage, transferList);
 
 // 例子
 var ab = new ArrayBuffer(1);
 worker.postMessage(ab, [ab]);
 
 ```
+- transferList:数组，用于传递所有权，如果一个对象的所有权被转义，在发送它的上下文中将变为不可用，可转义对象必须是ArrayBuffer、MessagePort(MessageChanel的port)或者ImageBitmap的实例。
 
 ## 在页面内创建Web Worker
 通常情况下，Worker 载入的是一个单独的 JavaScript 脚本文件，但是也可以载入与主线程在同一个网页的代码。
@@ -221,5 +222,66 @@ webWorker.onmessage = function (event) {
     }
 }
 webWorker.postMessage("init")
+
+```
+
+## MessageChannel
+> Vue的$nextTick实现中，优先检测是否支持原生的setImmediate(Node和高版本IE\chrome支持),不支持的话检测是否支持原生的MessageChannel,如果再不支持就会降级为setTimeout.
+
+setImmediate\MessageChannel\setTimeout都属于宏任务，宏任务就是等待主线程空闲后才会被执行的任务（宏任务->微任务->渲染->宏任务的执行过程），实现宏任务效果最理想的就是setImmediate，MessageChannel也可以替代，但setImmediate和MessageChannel的浏览器支持没有setTimeout好，setTimeout有一个致命缺点就是即使设置setTimeout(fn,0),fn不会立即被推入到宏任务队列中，在chrome中至少是4ms以上。而 ***setImmediate可以将任务直接推入到宏任务队列***
+
+MessageChannle允许我们创建一个新的消息通道，并通过它的两个MessagePort属性发送数据。
+```javascript
+var channel = new MessageChannel()
+//两个端口
+channel.port1
+channel.port2
+```
+MessageChannel创建了一个通信的管道，这个管道有两个端口，每个端口都可以通过postMessage发送数据，而一个端口只要绑定了onmessage回调方法，就可以接收从另一个端口传过来的数据。(这一点和Web Worker类似，传递的数据从event.data获取)
+```javascript
+var channel = new MessageChannel();
+var port1 = channel.port1;
+var port2 = channel.port2;
+port1.onmessage = function(event) {
+    console.log("port1收到来自port2的数据：" + event.data);
+}
+port2.onmessage = function(event) {
+    console.log("port2收到来自port1的数据：" + event.data);
+}
+
+port1.postMessage("发送给port2");
+port2.postMessage("发送给port1");
+```
+
+
+### 多个worker之间的通信
+当我们使用多个Web Worker并想要在两个Web Worker之间实现通信的时候，MessageChannel可以派上用场:
+```javascript
+//主线程
+var w1 = new Worker("worker1.js");
+var w2 = new Worker("worker2.js");
+var ch = new MessageChannel();
+//由于直接传递会被转化成字符串，这里使用转移数据的方法
+//MessageChannel会被自动存储在event.ports里面
+w1.postMessage("port1", [ch.port1]);
+w2.postMessage("port2", [ch.port2]);
+w2.onmessage = function(e) {
+    console.log(e.data);
+}
+//worker1
+self.onmessage = function(e) {
+    const  port = e.ports[0];
+    //传递给worker2
+    port.postMessage("this is from worker1")        
+}
+//worker2
+onmessage = function(e) {
+    const  port = e.ports[0];
+    //接受worker1消息
+    port.onmessage = function(e){
+        //传递回主线程
+        self.postMessage(e.data)
+    }        
+}
 
 ```
