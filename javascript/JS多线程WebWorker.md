@@ -55,13 +55,12 @@ var worker = new Worker('work.js')
 主线程通过```worker.onmessage```来接收worker的数据，通过```worker.postMessage()```来传递给worker数据。
 
 ```javascript
-worder.postMessage('hello')
+worker.postMessage('hello')
 worker.onmessage = function(event){
     //event.data为传过来的数据
     //do something
 }
 ```
-worker线程通过```self.onmessage```来接收主线程的数据,通过```self.postMessage()```来传递给主线恒数据,其中self代表子线程自身，为子线程的全局对象。(也可以使用this)
 ```javascript
 self.onmessage = function(e){
     console.log(e.data)
