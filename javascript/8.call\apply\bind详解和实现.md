@@ -1,8 +1,3 @@
-<!--
- * @Description: 
- * @Author: johe.huang
- * @Date: 2020-03-18 17:20:19
- -->
 # call\apply\bind用法
 > call、apply、bind都是用于改变this指向，并且可以通过call、apply来使用参数对象没有的方法。
 
@@ -334,5 +329,209 @@ func.apply(argThis,argArray);
 
 根据完整规范来实现apply:
 ```javascript
+//写一个函数来获取全局this
+function getGlobalThis(){
+    return this;
+}
+
+Function.prototype.applyFn = function(argThis,argArray){
+    //判断调用的this是否为函数类型
+    if(typeof this !== "function"){
+        throw new TypeError(this + 'is not a function');
+    }
+    if(argArray === undefined || argArray === null){
+        argArray = []
+    }
+    //因为argArray必须是数组或者类数组对象，数组本质是对象
+    if(typeof argArray !== 'object'){
+        throw new TypeError('CreateListFromArrayLike called on non-object');
+    } 
+    if(typeof argThis === 'undefined' || argThis === null){
+        argThis = getGlobalThis();
+    }
+    argThis = new Obejct(argThis);
+    argThis.fn = this;
+    var result = argThis.fn(...argArray);
+    delete argThis.fn;
+    return result;
+}
+```
+
+属性命名问题：
+- 如果argThis对象上有fn属性，就会被覆盖然后删除
+
+es6解决方法：Symbol()来创建独一无二的值
+es3:用时间戳生成
+
+```javascript
+let fn = '__'+new Date().getTime()；
+argThis[fn] = this;
+```
+
+## undefined判断问题
+undefined在es3和es5中都能被改写，undefined并不是保留词(reserved word),它只是全局对象的一个属性:
+```javascript
+var undefined = 10;
+alert(undefined);
+```
+在es5中undefined已经是全局对象的一个只读(read-only)属性，不能被重写，但是在局部作用域中，还是可以被重写的。
+
+```javascript
+(function() {
+  var undefined = 10;
+
+  // 10 -- chrome
+  alert(undefined);
+})();
+
+(function() {
+  undefined = 10;
+
+  // undefined -- chrome
+  alert(undefined);
+})();
+```
+所以判断一个值的类型是否为undefined用如下方法是不准确的：
+```javascript
+param === undefined
+```
+应该用以下方法:
+```javascript
+typeof param === 'undefined'
+param === void 0;
+```
+查看void作用:
+> The void operator evaluates the given expression and then returns undefined
+
+***意思是void元素安抚能对和给定的表达式进行求值，然后返回undefined,也就是说,void后面跟上任意表达式，返回的都是undefined，至于为什么使用void 0,因为void 0最短。***
+
+使用void 0代替undefined还能节省字节的大小，不少js压缩工具在压缩过程中，正是将undefined用void 0代替掉的。
+
+## 生成执行函数
+传参数的问题：
+- ...运算符为es6
+- eval已经不建议使用
+
+使用new Function()来生成执行函数:
+```
+new Function([arg1[,arg2[,...argN]],]functionBody)
+```
+arg1,...argN是形参。functionBody是函数体(为字符串) 
+简单使用例子：
+```javascript
+var sum = new Function('a','b','return a + b');
+sum(1,2);//3
+```
+复杂使用例子：
+```javascript
+var banana = {
+    color:'yellow',
+    show:function(size,name){
+        console.log(this.color);
+        console.log(size,name);
+    }
+}
+//传入(banana,'show',['big,banana'])实现banana.show(...['big','banana'])的效果
+let func = new Function('
+return arguments[0][arguments[1]](arguments[2][0],arguments[2][1])');
+func(banana,'show',['big','banana']);
+```
+用函数来生成一个能够执行不定参数的函数:
+```javascript
+//apply和call版本一致
+function generateFunction(argArrayLength){
+    var code = 'return arguments[0][arguments[1]](';
+    for(var i = 0; i < argArrayLength; i++){
+        code += 'arguments[2]['+i+']';
+        if(i != argArrayLength - 1){
+            code += ',';
+        }
+    }
+    code += ')';
+    return new Function(code);
+}
+```
+
+## 实现call、apply的完整代码
+先来一份简易版，不进行类型检测:
+apply实现：
+主要步骤：
+- 将函数作为对象的属性
+- 执行函数
+- 删除函数
+- 返回函数值
+```javascript
+function getGlobalThis(){
+    return this;
+}
+
+function generateFunction(argArraylength){
+    var code = 'return arguments[0][arguments[1]](';
+    for(var i = 0;i < argArraylength; i++){
+        code += 'arguments[2]['+ i +']';
+        if(i != argArraylength - 1){
+            code+=',';
+        }
+    }
+    code += ')';
+    return new Function(code);
+}
+
+Function.prototype.applyFn = function(argThis,argArray){
+    //绑定的this为undefined或者Null需要指定为全局this
+    if(argThis === void 0 || argThis === null){
+        argThis = getGlobalThis();
+    }
+    //生成一个随机属性名
+    var fn = '__'+new Date().getTime();
+    //防止有重名属性，先保存
+    var originFn = argThis[fn];
+    var hasOriginFn = argThis.hasOwnProperty(fn);
+    argThis[fn] = this;
+    //生成执行函数，解决不定参问题
+    var func = generateFunction(argArray.length);
+    var result = func(argThis,fn,argArray);
+    delete argThis[fn];
+    if(hasOriginFn){
+        argThis[fn] = originFn;
+    }
+    return result;
+}
+```
+call的实现与apply类似，只是传参方式不同
+```javascript
+function getGlobalThis(){
+    return this;
+}
+
+function generateFunction(argArraylength){
+    var code = 'return arguments[0][arguments[1]](';
+    for(var i = 0;i < argArraylength; i++){
+        code += 'arguments[2]['+ (1+i) +']';
+        if(i != argArraylength - 1){
+            code+=',';
+        }
+    }
+    code += ')';
+    return new Function(code);
+}
+
+Function.prototype.callFn = function(argThis){
+    if(argThis === void 0 || argThis === null){
+        argThis = getGlobalThis();
+    }
+    var fn = "__" + new Date().getTime();
+    var originFn = argThis[fn];
+    var hasOriginFn = argThis.hasOwnProperty(fn);
+    argThis[fn] = this;
+    //解决call不定参问题
+    var func = generateFunction(arguments.length - 1);
+    var result = func(argThis,fn,arguments);
+    delete argThis[fn];
+    if(hasOriginFn){
+        argThis[fn] = originFn;
+    }
+    return result;
+}
 
 ```
