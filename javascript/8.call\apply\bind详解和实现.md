@@ -114,7 +114,7 @@ appleBindShowFn('big','2020');//red apple big 2020
 //预设参数
 var appleBindShowFn2 = banana.show.bind(apple,'big','2020');
 appleBindShowFn2();//red apple big 2020
-//预设参数即使传参也无法改变
+//预设参数后，传入的参数按顺序传入原函数，这里small和2019为第三、第四个参数，没有形参接收
 appleBindShowFn2('small','2019');//red apple big 2020
 
 //被bind绑定this的新函数不能通过call、apply修改this指向，因为bind的优先级>call、apply
@@ -438,10 +438,11 @@ func(banana,'show',['big','banana']);
 ```
 用函数来生成一个能够执行不定参数的函数:
 ```javascript
-//apply和call版本一致
+//apply和call版本一致，注意call是从1开始 
 function generateFunction(argArrayLength){
     var code = 'return arguments[0][arguments[1]](';
     for(var i = 0; i < argArrayLength; i++){
+        //call实现版本： code += 'arguments[2]['+(1+i)+']';
         code += 'arguments[2]['+i+']';
         if(i != argArrayLength - 1){
             code += ',';
@@ -534,4 +535,192 @@ Function.prototype.callFn = function(argThis){
     return result;
 }
 
+```
+
+进行类型检测的完整版apply：
+主要步骤还是那几个：
+- 将函数作为对象的属性
+- 执行函数
+- 删除函数
+- 返回函数结果
+加上类型检测的步骤：(假设argThis为绑定的对象,argArray为传入的参数)
+- 检测调用apply\call的是否为函数，如果不是，返回错误
+- 检测argThis是否为Null或者undefined,是的话采用全局this
+- 检测argThis是否可以添加属性，如果不能，返回错误
+- 检测argArray如果是Null或者undefined,设置argArray为[]
+- 检测argArray如果不是Object，返回错误
+- argThis要进行Object的转化
+```javascript
+function getGlobalThis(){
+    return this;
+}
+
+function generateFunction(argArrayLength){
+    var code = 'return arguments[0][arguments[1]](';
+    for(var i = 0 ; i < argArrayLength;i++){
+        code += 'arguments[2]['+i+']';
+        if(i !== argArrayLength-1 ){
+            code += ',';
+        }
+    }
+    code += ')';
+    return new Function(code);
+}
+
+Function.prototype.applyFn = function(argThis,argArray){
+    //检测this是否为函数
+    if(typeof this !== 'function'){
+        throw new TypeError(this+'is not a function');
+    }
+    //检测argArray是否为undefined或者Null
+    if(argArray === void 0 || argArray === null){
+        argArray = []
+    }
+    //检测argArray是否为Object
+    if(typeof argArray !== 'object'){
+        throw new TypeError('CreateListFromArrayLike called on non-object');
+    }
+    //检测argThis是否为null或者undefined
+    if(argThis === null || argThis === void 0){
+        argThis = getGlobalThis();
+    }
+    //判断argThis是否能够添加属性---省略
+    argThis = new Object(argThis);
+    var fn = '__' + new Date().getTime();
+    var originFn = argThis[fn];
+    var hasOriginFn = argThis.hasOwnProperty(fn);
+    argThis[fn] = this;
+    var func = generateFunction(argArray.length);
+    var result = func(argThis,fn,argArray);
+    delete argThis[fn];
+    if(hasOriginFn){
+        argThis[fn] === originFn;
+    }
+    return result;
+}
+
+
+```
+
+# bind应用和实现
+> bind方法会创建一个新函数。称为绑定函数。当调用这个绑定函数时，绑定函数会以创建它时传入bind()方法的第一个参数作为this，第二个及以后的参数作为原函数的参数在调用时按照参数顺序来调用原函数。
+
+bind的作用：
+- 创建一个绑定了this指向的函数
+- 后续参数为预设参数，利用闭包保存着
+
+
+## bind应用场景：
+通常我们会用_this，that,self来保存this,或者使用箭头函数来绑定this.
+```javascript
+var foo = {
+    bar:1,
+    eventBind:function(){
+        var _this = this;
+        $('element').on('click',function(event){
+            console.log(_this.bar);
+        })
+    },
+    eventBind2:function(){
+        $('element').on(click,(event)=>{
+            console.log(this.bar);
+        })
+    },
+    eventBind3:function(){
+        $('element').on(click,function (event){
+            console.log(this.bar);
+        }.bind(this))
+    }
+}
+
+```
+柯里化函数实现:
+
+```javascript
+function test(x){
+    return function(y){
+        return x + y;
+    }
+}
+test(1)(2);//3
+
+function test2(a,b){
+    return a + b;
+}
+test2.bind(null,1)(2);//3
+
+```
+预设参数:
+```javascript
+function list(){
+    return Array.prototype.slice.call(arguments);
+}
+
+var list1 = list(1,2,3);//[1,2,3]
+
+var leadingThirtySevenList = list.bind(null,37);
+var list2 = leadingThirtySevenList();//[37]
+var list3 = leadingThirtySevenList(1,2,3);//[37,1,2,3];
+
+```
+使用new实例化绑定函数，也能做到预设参数的效果
+```javascript
+function Test3(a, b) {
+    this.a = a;
+    this.b = b;
+}
+Test3.prototype.add = function () {
+    return this.a + this.b;
+}
+// 如果不用 bind，正常来说这样处理
+var t1 = new Test3(1, 2);
+t1.add(); // 3, this 指向 t1
+// 使用 bind
+var NewTest3 = Test3.bind(null, 3);
+var t2 = new NewTest3(4);
+t2.add(); // 7, this 指向 t2
+```
+
+## bind实现
+- 返回一个绑定this的函数,这个函数被执行时会执行调用Bind的原函数
+- 能够预设参数
+- 返回的函数能够作为构造函数
+
+```javascript
+Function.prototype.bindFn = function(argThis){
+    var func = this;
+    return function(){
+        func.apply(argThis,arguments)
+    }
+}
+```
+解决预设参数:
+```javascript
+Function.prototype.bindFn = function(argThis){
+    var func = this;
+    var argArray = Array.prototype.slice.call(arguments,1);
+    return function(){
+        func.apply(argThis,argArray.concat(Array.prototype.slice.call(arguments)))
+    }
+}
+```
+解决生成的函数能够作为构造函数:
+```javascript
+Function.prototype.bindFn = function(argThis){
+    var func = this;
+    var argArray = Array.prototype.slice.call(arguments,1);
+    var bound = function(){
+        var args = argArray.concat(Array.prototype.slice.call(arguments))
+        if(this instanceof bound){
+            func.apply(this,args);
+        }else{
+            func.apply(argThis,args);
+        }
+    }
+    //保持原型关系
+    if(this.prototype){
+        bound.prototype = this.prototype;
+    }
+    return bound;
+}
 ```
