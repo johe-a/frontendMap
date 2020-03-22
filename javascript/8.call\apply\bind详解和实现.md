@@ -609,6 +609,48 @@ bind的作用：
 - 创建一个绑定了this指向的函数
 - 后续参数为预设参数，利用闭包保存着
 
+```javascript
+//function
+console.log(Function.prototype.bind);
+//function   说明bind执行后返回function
+console.log(Function.prototype.bind());
+//bind
+console.log(Function.prototype.bind.name);
+//'bound '
+console.log(Function.prototype.bind().name);
+
+
+var banana = {
+    color:'yellow'
+};
+function original(a,b){
+    console.log(this.color);
+    console.log([a,b]);
+    return false;
+}
+//预设1为形参a的值
+var bound = original.bind(banana,1);
+//'yellow',[1,2]
+var boundResult = bound(2);
+//false,bind返回的函数执行后可以有返回值
+console.log(boundResult);
+//2,返回original函数的形参个数
+console.log(original.bind().length);
+//bound original，返回的函数名为bound+原函数
+console.log(bound.name);
+//'bound '
+console.log((function(){}).bind().name); 
+//0
+console.log((function(){}).bind().length); 
+```
+从上面的代码可以知道bind的几个特性:
+- bind为Function.prototype的属性，说明每个函数都能调用
+- 调用bind的函数中的this指向bind()函数的第一个参数
+- 传给bind()的其他参数接收处理了，bind()之后返回的函数的参数也接收处理了，也就是说合并处理了。
+- bind本身是一个函数，执行后仍然返回函数，函数名为bound+空格+原函数名。
+- bind后返回的bound函数，执行后返回的是原函数的返回值。
+- bind函数的形参长度(Function.prototype.bind.length)是1。bind后返回的bound函数形参与绑定的原函数形参个数一致。
+
 
 ## bind应用场景：
 通常我们会用_this，that,self来保存this,或者使用箭头函数来绑定this.
@@ -706,6 +748,15 @@ Function.prototype.bindFn = function(argThis){
 ```
 解决生成的函数能够作为构造函数:
 ```javascript
+function createObject(Child,Parent){
+    function Fn(){
+    }
+    Fn.prototype = Parent.protoype;
+    var fn = new Fn();
+    fn.constructor = Child;
+    return fn;
+}
+
 Function.prototype.bindFn = function(argThis){
     var func = this;
     var argArray = Array.prototype.slice.call(arguments,1);
@@ -719,8 +770,19 @@ Function.prototype.bindFn = function(argThis){
     }
     //保持原型关系
     if(this.prototype){
-        bound.prototype = this.prototype;
+        //参照Object.create的实现
+        var proto = createObject(bound,this)
+        bound.prototype = proto;
     }
+    //设置name和length属性
+    Object.definedProperties(bound,{
+        'length':{
+            value:func.length
+        },
+        'name':{
+            value:'bound '+func.name
+        }
+    })
     return bound;
 }
 ```
