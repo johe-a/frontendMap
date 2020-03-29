@@ -786,3 +786,11 @@ Function.prototype.bindFn = function(argThis){
     return bound;
 }
 ```
+
+
+# 复习问题
+- 修改this的方法
+- call、apply的实现
+- 怎么解决call参数不定的问题
+- bind的实现，预设参数的实现
+- 怎么解决bind返回的函数能够作为构造函数的问题
