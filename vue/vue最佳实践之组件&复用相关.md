@@ -921,3 +921,109 @@ export default{
 }
 
 ```
+# 自定义过滤器
+过滤器可以用于一些常见文本格式化，过滤器可以用在两个地方：
+- 双花括号插值
+- v-bind表达式
+```javascript
+{{ message | capitalize}}
+
+<div v-bind:id="rawId | formatId"></div>
+```
+我们可以在组件的选项中定义过滤器:
+```javascript
+export default{
+    data(){
+        ...
+    },
+    filters:{
+        capitalize: function(value){
+            if(!value) return '';
+            value = value.toString();
+            //首字母大写
+            return value.charAt(0).toUpperCase() + value.slice(1);
+        }
+    }
+}
+```
+或者在创建Vue实例之前全局定义过滤器：
+```javascript
+Vue.filter('capitalize',function(value){
+    if(!value) return '';
+    value = value.toString();
+    return value.chartAt(0).toUpperCase() + value.slice(1);
+})
+
+//在这之前
+new Vue({
+
+})
+```
+过滤器是JavaScript函数，因此可以接受参数,也可以通过管道符对多个过滤器串联。
+```javascript
+{{message | filterA('arg1',arg2)}}
+```
+
+
+# Vue的插件机制
+插件通常用来为Vue添加全局功能，插件的功能有以下几种：
+- 添加全局方法或者property。例如vue-custom-element
+- 添加全局资源：指令(Vue.directive)/过滤器(Vue.filter)/过度等。例如elementUI中的v-loading
+- 通过全局混入一些组件选项(Vue.mixin),自定义生命周期。例如vue-router。
+- 添加Vue实例方法，通过把它们添加到Vue.prototype上实现。例如我们需要自定义$http为axios的实例。
+
+## Vue.use
+通过全局方法Vue.use使用插件。我们需要在调用new Vue()之前完成(当然需要在实例化Vue之前，给Vue.prototype添加方法，否则实例化的Vue没有这些方法.
+```javascript
+//等同于MyPlugin.install(Vue)
+Vue.use(MyPlugin);
+
+new Vue({
+
+})
+```
+也可以传入一个可选的选项对象
+```javascript
+Vue.use(MyPlugin,{ options:true })
+```
+## 插件开发
+Vue插件应该暴露一个install方法，供Vue调用，这个方法的第一个参数是Vue构造器，第二个参数是一个可选的选项对象。
+```javascript
+MyPlugin.install = function(Vue,options){
+    // 添加全局方法或者属性
+    Vue.myGlobalMethod = function(){
+
+    }
+
+    //添加全局指令
+    Vue.directive('my-directive',{
+        bind(el,binding,vnode){
+
+        },
+        update(el,binding,vnode){
+
+        }
+    })
+
+    //添加全局过滤器
+    Vue.filter('capitalize',funtion(value){
+        //首字母大写
+        if (!value) return ''
+        value = value.toString()
+        return value.charAt(0).toUpperCase() + value.slice(1)
+    })
+
+    //混入组件选项
+    Vue.mixin({
+        created:function(){
+            //会和组件的created顺序执行
+        }
+    })
+
+    //添加实例方法
+    Vue.prototype.$http = fucntion(){
+
+    }
+}
+
+```
