@@ -656,8 +656,7 @@ directives:{
     - value:指令的绑定值，例如v-my-directive="1+1"，值为2，即为表达式最新的值
     - oldValue:指令绑定的前一个值，仅在update和componentUpdated钩子中可用。无论值是否改变都可用。
     - expression:字符串形式的指令表达式。例如v-my-directive="1+1",表达式为"1 + 1"
-    - arg:传给指令的桉树，可选。例如v-my-directive:foo中，参数为"foo"
-    - modifiers:一个包含修饰符的对象。例如:v-my-directive.foo.bar,修饰符对象为{foo:treu,bar:true}
+    - modifiers:一个包含修饰符的对象。例如:v-my-directive.foo.bar,修饰符对象为{foo:true,bar:true}
 - vnode: Vue编译生成的虚拟节点。
 - oldVnode:上一个虚拟节点，仅在update和componentUpdated钩子中使用
 
