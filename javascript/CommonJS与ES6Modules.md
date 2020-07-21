@@ -252,3 +252,32 @@ import('./print.js').then((module)=>{
     print();
 })
 ```
+
+# 总结
+CommonJS和ES6 modules的不同点：
+- 导出结果不同，CommonJS直接导出module.exports对象，即使是解构导入，也是导入整个对象后赋值(类似于赋值)。ES6导出的是动态引用，无论是基本数据类型还是引用类型(类似于取地址)。ES6是按需导出，而不是整个模块对象导出，只有被导入的部分会被导出。
+```javascript
+let a = 1;
+let b = {
+    value:2
+}
+//commonjs
+module.exports = {
+    a,
+    b
+}
+//modules
+export default {
+    a,
+    b
+}
+```
+对于CommonJS，类似于赋值操作，将module.exports导出。取出a和b栈地址内的值赋值(a是基本数据类型，所以a栈地址内存的就是1这个值，b是引用类型，所以b栈地址内存的就是b指向对象的引用)。随后a的改变不会影响module.exports.a，也就不会影响到引入当前模块a的值，b的改变(除了改变b地址)会影响module.exports.b，也就会影响到引入当前模块b的值。
+
+对于Modules，类似于取地址，将default中被引用的成员的地址导出(而不是像module.exports导出整个模块对象,这更有利于tree shaking，删除没有用到的代码)，取出a和b栈地址对应的地址，也就是不管a和b是什么类型的数据，a和b的改变都会影响引入当前模块的值。
+
+- CommonJS是运行时执行，require和module.exports不会提前执行。Modules会在编译时进行静态分析，import就会优于其他内容执行，export命令会有变量声明提前的效果。
+
+- 当遇到循环依赖的时候，CommonJS会将入口模块的module.exports执行完成部分副本直接导出。Modules由于import会被提前执行，所以入口模块其实还未被执行，此时导出的是一个export编译分析出的结果(函数为函数声明，变量undefined，类似于活动变量的初始化)
+
+相同点：在引入相同的模块的时候，不会反复执行。
