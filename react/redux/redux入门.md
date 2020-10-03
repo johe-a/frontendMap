@@ -333,7 +333,7 @@ const reducer = combineReducers(reducers)
 ```
 
 # 工作流
-!(Redux工作流)[https://tva1.sinaimg.cn/large/007S8ZIlgy1gic9u72urjj30zc0r0ajf.jpg]
+![Redux工作流](https://tva1.sinaimg.cn/large/007S8ZIlgy1gic9u72urjj30zc0r0ajf.jpg)
 
 Store就像一台状态机器，它对外提供接口，有分发Action的接口，有订阅的接口，有获取当前状态的接口等等。
 
