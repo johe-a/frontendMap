@@ -2,6 +2,7 @@
 > GraphQL 既是一种用于 API 的查询语言也是一个满足你数据查询的运行时。 GraphQL 对你的 API 中的数据提供了一套易于理解的完整描述，使得客户端能够准确地获得它需要的数据，而且没有任何冗余，也让 API 更容易地随着时间推移而演进，还能用于构建强大的开发者工具。
 
 简单来说graphql就是一个API查询语言，并且还提供了运行时解析。
+![](https://tva1.sinaimg.cn/large/007S8ZIlly1gjlk3s3e18j30ub058wf2.jpg)
 
 优势:
 - 数据内容和格式由客户端来决定
@@ -12,7 +13,7 @@
 - 客户端来决定数据内容和格式，可能有安全风险
 
 # 查询
-一个简单的查询如下，假设要查询Hero表的name和friends:
+一个简单的查询如下
 ```typescript
 query searchHumanFriends {
   hero {
@@ -45,7 +46,7 @@ query searchHumanFriends {
 }
 ```
 ## 参数
-假设我们要查human表id为1000的name和height:
+假设我们要查human id为1000的name和height:
 ```typescript
 query humanNameAndHeight {
   human(id: "1000") {
@@ -261,3 +262,366 @@ query Hero($episode: Episode, $withFriends: Boolean!) {
 一个指令可以附着在字段或者片段包含的字段上，然后以任何服务端期待的方式来改变查询的执行。GraphQL 的核心规范包含两个指令，其必须被任何规范兼容的 GraphQL 服务器实现所支持
 - @include(if: Boolean) 仅在参数为 true 时，包含此字段。
 - @skip(if: Boolean) 如果参数为 true，跳过此字段。
+
+## 变更(Mutations)
+REST中，任何请求都可能最后导致一些服务端副作用，但是约定上建议不要使用 GET 请求来修改数据。GraphQL 也是类似 —— 技术上而言，任何查询都可以被实现为导致数据写入。然而，建一个约定来规范任何导致写入的操作都应该显式通过变更（mutation）来发送。
+
+就如同查询一样，如果任何变更字段返回一个对象类型，你也能请求其嵌套字段。获取一个对象变更后的新状态也是十分有用的。我们来看看一个变更例子：
+```typescript
+mutation CreateReviewForEpisode($ep: Episode!, $review: ReviewInput!) {
+  createReview(episode: $ep, review: $review) {
+    stars
+    commentary
+  }
+}
+//传入参数
+{
+  "ep": "JEDI",
+  "review": {
+    "stars": 5,
+    "commentary": "This is a great movie!"
+  }
+}
+//得到结果
+{
+  "data": {
+    "createReview": {
+      "stars": 5,
+      "commentary": "This is a great movie!"
+    }
+  }
+}
+```
+注意 createReview 字段如何返回了新建的 review 的 stars 和 commentary 字段。这在变更已有数据时特别有用，例如，当一个字段自增的时候，我们可以在一个请求中变更并查询这个字段的新值。
+
+**一个变更也能包含多个字段，查询和变更之间的一个重要区别是:查询字段时，是并行执行，而变更字段时，是线性执行，一个接着一个。以确保不会出现竞态。**
+
+
+## 内联片段（inline Fragments）
+如果你查询的字段返回的是接口或者联合类型，那么你困难需要使用内敛片段来取出下层具体类型的数据：
+```typescript
+query HeroForEpisode($ep: Episode!) {
+  hero(episode: $ep) {
+    name
+    ... on Droid {
+      primaryFunction
+    }
+    ... on Human {
+      height
+    }
+  }
+}
+//得到结果
+{
+  "data": {
+    "hero": {
+      "name": "R2-D2",
+      "primaryFunction": "Astromech"
+    }
+  }
+}
+```
+
+## 元字段
+某些情况下，你并不知道你将从 GraphQL 服务获得什么类型，这时候你就需要一些方法在客户端来决定如何处理这些数据。GraphQL 允许你在查询的任何位置请求 __typename，一个元字段，以获得那个位置的对象类型名称。
+```typescript
+{
+  search(text: "an") {
+    __typename
+    ... on Human {
+      name
+    }
+    ... on Droid {
+      name
+    }
+    ... on Starship {
+      name
+    }
+  }
+}
+//结果
+{
+  "data": {
+    "search": [
+      {
+        "__typename": "Human",
+        "name": "Han Solo"
+      },
+      {
+        "__typename": "Human",
+        "name": "Leia Organa"
+      },
+      {
+        "__typename": "Starship",
+        "name": "TIE Advanced x1"
+      }
+    ]
+  }
+}
+```
+上面的查询中，search 返回了一个联合类型，其可能是三种选项之一。没有 __typename 字段的情况下，几乎不可能在客户端分辨开这三个不同的类型。
+
+# Schema和类型
+因为一个 GraphQL 查询的结构和结果非常相似，因此即便不知道服务器的情况，你也能预测查询会返回什么结果。但是一个关于我们所需要的数据的确切描述依然很有意义，我们能选择什么字段？服务器会返回哪种对象？这些对象下有哪些字段可用？这便是引入 schema 的原因。
+
+## 类型语言（Type Language）
+GraphQL 服务可以用任何语言编写，因为我们并不依赖于任何特定语言的句法句式（譬如 JavaScript）来与 GraphQL schema 沟通，我们定义了自己的简单语言，称之为 “GraphQL schema language” —— 它和 GraphQL 的查询语言很相似，让我们能够和 GraphQL schema 之间可以无语言差异地沟通。
+
+## 对象类型和字段（Object Types and Fields）
+```typescript
+type Character {
+  name: String!
+  appersIn: [Episode!]!
+}
+
+```
+- Character是一个GraphQL的对象类型，表示其实一个拥有一些字段的类型。
+- name和appearsIn是Character类型上的字段。这意味着在一个操作 Character 类型的 GraphQL 查询中的任何部分，都只能出现 name 和 appearsIn 字段
+- String是内置的标量类型之一。
+- String!表示这个字段是非空的，意味着GraphQL服务保证当你查询这个字段后总会返回一个值。
+- [Episode!]!表示一个非空的Episode数组，所以当我们查询appearsIn的时候，总能得到一个数组（零或者多个）。且由于Episode!也是非空的，你总是可以预期到数组中的每个项目都是一个Episode对象。
+
+## 参数（Arguments）
+GraphQL 对象类型上的每一个字段都可能有零个或者多个参数，例如下面的 length 字段：
+```typescript
+type Starship {
+  id: ID!
+  name: String!
+  length(unit: LengthUnit = METER): Float
+}
+
+```
+参数可能是必选或者可选的，当一个参数是可选的，我们定义一个默认值，如果unit参数没有传递，那么它将会被默认设置为METER。
+非空类型修饰符也可以用于定义字段上的参数，如果这个参数上传递了一个空值（不管通过 GraphQL 字符串还是变量），那么会导致服务器返回一个验证错误。
+```typescript
+query DroidById($id: ID!) {
+  droid(id: $id) {
+    name
+  }
+}
+//参数
+{
+  "id": null
+}
+//得到错误结果
+{
+  "errors": [
+    {
+      "message": "Variable \"$id\" of required type \"ID!\" was not provided.",
+      "locations": [
+        {
+          "line": 1,
+          "column": 17
+        }
+      ]
+    }
+  ]
+}
+```
+非空和列表修饰符可以组合使用。例如你可以要求一个非空字符串的数组：
+```typescript
+myField: [String!]
+
+```
+这表示数组本身可以为空，但是不能有任何空值成员：
+```
+myField: null // 有效
+myField: [] // 有效
+myField: ['a', 'b'] // 有效
+myField: ['a', null, 'b'] // 错误
+```
+
+
+## 查询和变更类型
+你的 schema 中大部分的类型都是普通对象类型，但是一个 schema 内有两个特殊类型：
+```
+schema {
+  query: Query
+  mutation: Mutation
+}
+```
+
+如果看到像这样的查询：
+```typescript
+query {
+  hero {
+    name
+  }
+  droid(id: "2000") {
+    name
+  }
+}
+
+
+```
+则表示这个GraphQL服务需要一个Query类型：
+```typescript
+type Query {
+  hero(episode: Episode): Character
+  droid(id: ID!): Droid
+}
+
+```
+
+## 枚举类型
+```typescript
+enum Episode {
+  NEWHOPE
+  EMPIRE
+  JEDI
+}
+```
+这表示无论我们在 schema 的哪处使用了 Episode，都可以肯定它返回的是 NEWHOPE、EMPIRE 和 JEDI 之一。
+
+
+## 接口
+跟许多类型系统一样，GraphQL 支持接口。一个接口是一个抽象类型，它包含某些字段，而对象类型必须包含这些字段，才能算实现了这个接口。
+```typescript
+interface Character {
+  id: ID!
+  name: String!
+  friends: [Character]
+  appearsIn: [Episode]!
+}
+
+```
+任何实现Character接口的类型都要有这些字段：
+```typescript
+type Human implements Character {
+  id: ID!
+  name: String!
+  friends: [Character]
+  appearsIn: [Episode]!
+  starships: [Starship]
+  totalCredits: Int
+}
+
+type Droid implements Character {
+  id: ID!
+  name: String!
+  friends: [Character]
+  appearsIn: [Episode]!
+  primaryFunction: String
+}
+
+```
+
+## 联合类型
+联合类型和接口十分相似，但是它并不指定类型之间的任何共同字段
+```
+union SearchResult = Human | Droid | Starship
+```
+注意，联合类型的成员需要是具体对象类型；你不能使用接口或者其他联合类型来创造一个联合类型。
+
+## 输入类型
+```typescript
+input ReviewInput {
+  stars: Int!
+  commentary: String
+}
+
+```
+你可以像这样在变更（mutation）中使用输入对象类型：
+```typescript
+mutation CreateReviewForEpisode($ep: Episode!, $review: ReviewInput!) {
+  createReview(episode: $ep, review: $review) {
+    stars
+    commentary
+  }
+}
+
+```
+
+# 执行
+GraphQL 不能脱离类型系统处理查询，让我们用一个类型系统的例子来说明一个查询的执行过程：
+```typescript
+type Query {
+  human(id: ID!): Human
+}
+
+type Human {
+  name: String
+  appearsIn: [Episode]
+  startships: [Startship]
+}
+
+enum Episode {
+  NEWHOPE
+  EMPIRE
+  JEDI
+}
+
+type Starship {
+  name: String
+}
+
+```
+用一个例子来描述一个查询请求被执行的全过程：
+```typescript
+{
+  human(id: 1002) {
+    name
+    appearsIn
+    starships {
+      name
+    }
+  }
+}
+//查询结果
+{
+  "data": {
+    "human": {
+      "name": "Han Solo",
+      "appearsIn": [
+        "NEWHOPE",
+        "EMPIRE",
+        "JEDI"
+      ],
+      "starships": [
+        {
+          "name": "Millenium Falcon"
+        },
+        {
+          "name": "Imperial shuttle"
+        }
+      ]
+    }
+  }
+}
+```
+
+## 解析器
+每一个 GraphQL 服务端应用的顶层，必有一个类型代表着所有进入 GraphQL API 可能的入口点，我们将它称之为 Root 类型或 Query 类型。
+
+在这个例子中查询类型提供了一个字段 human，并且接受一个参数 id。这个字段的解析器可能请求了数据库之后通过构造函数返回一个 Human 对象。
+```typescript
+Query: {
+  human(obj, args, context, info) {
+    return context.db.loadHumanByID(args.id).then(
+      userData => new Human(userData)
+    )
+  }
+}
+```
+这个例子使用了JS语言。解析器函数接收4个参数：
+- obj：上一级对象，如果字段术语根节点查询类型时通常不会被使用。
+- args：可以提供在GraphQL查询中传入的参数。
+- context: 上下文。
+- info: 一个保存与当前查询相关的字段特定信息以及schema详细信息的值。
+
+context 提供了一个数据库访问对象，用来通过查询中传递的参数 id 来查询数据，因为从数据库拉取数据的过程是一个异步操作，该方法返回了一个 Promise 对象。
+
+## 可以忽略的解析器
+Human对象已经生成了，但是GraphQL还是会继续递归执行：
+```typescript
+Human: {
+  name(obj, args, context, info) {
+    return obj.na,e
+  }
+}
+```
+GraphQL 服务端应用的业务取决于类型系统的结构。在 human 对象返回值之前，由于类型系统确定了 human 字段将返回一个 Human 对象，GraphQL 会根据类型系统预设好的 Human 类型决定如何解析字段。
+
+在这个例子中，对 name 字段的处理非常的清晰，name 字段对应的解析器被调用的时候，解析器回调函数的 obj 参数是由上层回调函数生成的 new Human 对象。在这个案例中，我们希望 Human 对象会拥有一个 name 属性可以让我们直接读取。
+
+事实上，许多 GraphQL 库可以让你省略这些简单的解析器，假定一个字段没有提供解析器时，那么应​​该从上层返回对象中读取和返回和这个字段同名的属性。

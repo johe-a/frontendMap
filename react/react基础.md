@@ -632,6 +632,73 @@ class Parent extends React.Component {
 
 
 ```
+# 使用useRef创建ref对象
+```javascript
+const refContainer = useRef(initialValue);
+
+```
+useRef 返回一个可变的ref对象，其.current属性被初始化为传入的参数，返回的ref对象在组件的整个生命周期内保持不变。
+
+```javascript
+import { useRef } from 'react';
+
+function TextInputWithFocusButton() {
+  cosnt inputEl = useRef(null);
+  cosnt onButtonClick = () => {
+    inputEl.current.focus();
+  };
+  return (
+    <>
+      <input ref={inputEl} type="text" />
+      <button onClick={onButtonClick}>Focus the input</button>
+    </>
+  )
+}
+
+```
+那么useRef和createRef有什么差别呢？
+- createRef可以在函数式、类组件内使用
+- useRef由于是hook，只能在函数式组件内使用
+
+它们还有什么差别？
+> useRef在react hook中的作用，就像一个变量，类似于this，可以存放任何东西，所以useRef每次渲染时，都会返回相同的引用。而createRef每次渲染都会返回一个新的引用（每次都会调用createRef来创建）。
+
+```javascript
+import React, {useState, useRef, createRef} from 'react';
+const Rerender = () => {
+  const [renderIndex, setRenderIndex] = useState(1);
+  const refFromUseRef = useRef();
+  const refFromCreateRef = createRef();
+
+  if(!refFromUseRef.current) {
+    refFromUseRef.current = renderIndex;
+  }
+
+  if(!refFromCreateRef.current) {
+    refFromCreateRef.current = renderIndex;
+  }
+
+  return (
+    <>
+      <p>Current render index: {renderIndex}</p>
+      <p>
+        <b>refFromUseRef</b> value: {refFromUseRef.current}
+      </p>
+      <p>
+        <b>refFromCreateRef</b> value: {refFromCreateRef.current}
+      </p>
+      <button onClick={() => setRenderIndex((pre) => pre + 1)}>re-render</button>
+    </>
+  )
+}
+
+```
+**点击Button，可以看到使用createRef创建的对象一直在改变，因为每次渲染都会创建新的引用，而useRef一直指向相同的引用，就像对象实例内函数的this变量一样，一直指向某一个引用。所以useRef的作用是创建一个不会改变引用的对象。可以不仅仅用来保存ref**
+
+ref对象内容发生变化的时候，useRef不会通知你，变更.current属性不会引发组件重新渲染。如果想要在React绑定或者解绑DOM节点ref时运行某些代码，需要使用回调ref来实现。
+
+# 使用callback hook来实现回调ref
+
 
 # 纯函数
 一个函数的返回结果只依赖于它的参数，并且在执行过程里面没有副作用，我们就叫这个函数为纯函数。

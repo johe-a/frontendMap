@@ -89,3 +89,12 @@ export class TodoInput extends React.Component<Props, State> {
 **这里可以思考下React.Component的作用，推测是一个接口，接收两个泛型Props和State，分别是Props和State的类型，为Props和State类型再加一层封装，并且定义生命周期函数、render函数等等**
 
 React.Component会帮Props和State加上Readonly，确保他们是不可变的。
+
+# 事件类型
+//TODO
+```typescript
+function mouseHandler(e: MouseEvent) => {
+}
+document.addEventListener('mouseup', mouseupHandler)
+
+```
