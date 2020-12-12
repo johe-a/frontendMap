@@ -283,8 +283,277 @@ useEffect(() => {
 
 虽然 useEffect 会在浏览器绘制后延迟执行，但会保证在任何新的渲染前执行。React 将在组件更新前刷新上一轮渲染的 effect。
 
+# useRef
+
+
+
 
 # useCallback
+语法:
+```javascript
+const memorizedCallback = useCallback(
+  function cb(){
+    doSomething(a, b);
+  }, 
+  [a, b]
+);
+
+```
+在a和b不变的情况下，memorizedCallback的引用不变（指向cb），即useCallback的第一个入参函数会被缓存，从而达到渲染性能优化的目的。
+
+## 使用useCallack的前后分析
+从一个简单示例分析：
+```javascript
+// 在Hooks中获取上一次指定的props
+const usePrevProps = value => {
+  console.log('执行usePrevProps');
+  const ref = React.useRef();
+  React.useEffect(() => {
+    console.log('执行useEffect');
+    ref.current = value;
+  });
+  return ref.current;
+}
+
+function App() {
+  const [count, setCount] = React.useState(0);
+  const [total, setTotal] = React.useState(0);
+  const handleCount = () => setCount(count + 1);
+  const handleTotal = () => setTotal(total + 1);
+  // 自定义hook来存储上一次的handleCount函数
+  const prevHandleCount = usePrevProps(handleCount);
+  
+  console.log('两次处理函数是否相等：', prevHandleCount === handleCount);
+  
+  return (
+    <div>
+      <div>Count is {count}</div>
+       <div>Total is {total}</div>
+      <br/>
+      <div>
+        <button onClick={handleCount}>Increment Count</button>
+        <button onClick={handleTotal}>Increment Total</button>
+      </div>
+    </div>
+  )
+}
+
+ReactDOM.render(<App />, document.body);
+
+/**
+ *  首次执行：
+ *  执行usePreProps
+ *  两次处理函数是否相等: false
+ *  执行useEffect（由于闭包的关系，缓存了上一个handleCount）
+ *  点击后第一次重新渲染：
+ *  执行usePreProps
+ *  两次处理函数是否相等: false（由于handleCount被重复创建了）
+ *  执行useEffect
+ * /
+
+```
+上述例子在点击按钮时，会导致App组件重新渲染，每一次渲染时都会执行函数体，函数体内的handleCount被重复的创建，所以会一直输出false。
+
+> 注意：usePrevProps内部使用了useRef和useRef(), 虽然usePrevProps、useRef是同步调用的，但是useEeffect是在组件渲染完毕后调用的，所以会延迟执行。
 
 
-# useRef
+为了能够缓存handleCount，我们可以使用useCallback:
+```javascript
+// 在Hooks中获取上一次指定的props
+const usePrevProps = value => {
+  console.log('执行usePrevProps');
+  const ref = React.useRef();
+  React.useEffect(() => {
+    console.log('执行useEffect');
+    ref.current = value;
+  });
+  return ref.current;
+}
+
+function App() {
+  const [count, setCount] = React.useState(0);
+  const [total, setTotal] = React.useState(0);
+  const handleCount = React.useCallback(() => setCount(count + 1), []);
+  const handleTotal = () => setTotal(total + 1);
+  // 自定义hook来存储上一次的handleCount函数
+  const prevHandleCount = usePrevProps(handleCount);
+  
+  console.log('两次处理函数是否相等：', prevHandleCount === handleCount);
+  
+  return (
+    <div>
+      <div>Count is {count}</div>
+       <div>Total is {total}</div>
+      <br/>
+      <div>
+        <button onClick={handleCount}>Increment Count</button>
+        <button onClick={handleTotal}>Increment Total</button>
+      </div>
+    </div>
+  )
+}
+
+ReactDOM.render(<App />, document.body);
+
+/**
+ *  首次执行：
+ *  执行usePreProps
+ *  两次处理函数是否相等: false （此时ref.current还是个空值）
+ *  执行useEffect（由于闭包的关系，缓存了上一个handleCount）
+ *  点击后第一次重新渲染：
+ *  执行usePreProps
+ *  两次处理函数是否相等: true (useCallback缓存了handleCount)
+ *  执行useEffect
+ * /
+```
+> **传递给useCallback的第二个参数，代表它的依赖项，一旦依赖项没有改变，则传递给useCallback的第一个参数会被缓存。通过传入空数组，则每次依赖数组都不会被改变，得到永久缓存的效果。**
+> 为什么要缓存函数？将handleCount传递给经过优化的组件时，由于handleCount一直在改变，会导致经过优化的组件(只要props相同，就不会重新渲染，例如通过React.memo、shouldComponentUpdate判断和pureComponent创建的组件)依然重复渲染。
+
+如下所示：
+```javascript
+// 在Hooks中获取上一次指定的props
+const usePrevProps = value => {
+  console.log('执行usePrevProps');
+  const ref = React.useRef();
+  React.useEffect(() => {
+    console.log('执行useEffect');
+    ref.current = value;
+  });
+  return ref.current;
+}
+
+function App() {
+  const [count, setCount] = React.useState(0);
+  const [total, setTotal] = React.useState(0);
+  const handleCount = () => setCount(count + 1);
+  const handleTotal = () => setTotal(total + 1);
+  // 自定义hook来存储上一次的handleCount函数
+  const prevHandleCount = usePrevProps(handleCount);
+  
+  console.log('两次处理函数是否相等：', prevHandleCount === handleCount);
+  
+  return (
+    <div>
+      <div>Count is {count}</div>
+       <div>Total is {total}</div>
+      <br/>
+      <div>
+        <button onClick={handleCount}>Increment Count</button>
+        <button onClick={handleTotal}>Increment Total</button>
+        <CachedChildComponent click={handleCount} />
+      </div>
+    </div>
+  )
+}
+
+const CachedChildComponent = React.memo(function ChildComponent({click}) {
+  console.log('Child Component Render');
+  return (
+    <button onClick={click}>Child Click</button>
+  )
+})
+
+ReactDOM.render(<App />, document.body);
+
+/**
+ *  首次执行：
+ *  执行usePreProps
+ *  两次处理函数是否相等: false （此时ref.current还是个空值）
+ *  Child Component Render
+ *  执行useEffect（由于闭包的关系，缓存了上一个handleCount）
+ *  点击后第一次重新渲染：
+ *  执行usePreProps
+ *  两次处理函数是否相等: false 
+ *  Child Component Render
+ *  执行useEffect
+ * /
+```
+CachedChildComponent在React.memo的控制下，只要传递给它的props不改变，它就不会重复渲染。但是handleCount的引用在每次渲染中都会改变，导致传递给CachedChildComponent的props中的click属性也一直在改变。达不到缓存的效果。
+
+如果使用useCallback就能很好的解决这个问题。
+
+## useCallback源码
+```javascript
+function updateCallback(callback, deps) {
+  const hook = updateWorkInProgressHook();
+  const nextDeps = deps === undefined ? null : deps;
+  const prevState = hook.memoizedState;
+  if (prevState !== null) {
+    if (nextDeps !== null) {
+      const prevDeps = prevState[1];
+      if (areHookInputsEqual(nextDeps, prevDeps)) {
+        return prevState[0];
+      }
+    }
+  }
+  // 初始化缓存，第一次执行或者不存在依赖数组的情况下
+  hook.memoizedState = [callback, nextDeps];
+  return callback;
+}
+```
+
+# useMemo
+useMemo和useCallback几乎是一致的，他们的唯一区别：
+- useCallback根据依赖，缓存第一个入参。
+- useMemo根据依赖，缓存第一个入参执行后的值。
+
+useMemo源码：
+```javascript
+function updateMemo(nextCreate, deps) {
+  const hook = updateWorkInProgressHook();
+  const nextDeps = deps === undefined ? null : deps;
+  const prevState = hook.memoizedState;
+  if (prevState !== null) {
+    if (nextDeps !== null) {
+      const prevDeps = prevState[1];
+      if (areHookInputsEqual(nextDeps, prevDeps)) {
+        return prevState[0];
+      }
+    }
+  }
+  const nextValue = nextCreate(); 
+  hook.memoizedState = [nextValue, nextDeps];
+  return nextValue;
+};
+```
+
+useMemo一般用于密集型计算大的一些缓存。
+例如：
+```javascript
+// 在Hooks中获取上一次指定的props
+const usePrevProps = value => {
+  const ref = React.useRef();
+  React.useEffect(() => {
+    ref.current = value;
+  });
+  return ref.current;
+}
+
+function App() {
+  const [count, setCount] = React.useState(0);
+  const [total, setTotal] = React.useState(0);
+  const calcValue = React.useMemo(() => {
+    return Array(100000).fill('').map(v => /*一些大量计算*/ v);
+  }, [count]);
+  const handleCount = () => setCount(count => count + 1);
+  const handleTotal = () => setTotal(total + 1);
+  const prevCalcValue = usePrevProps(calcValue);
+  
+  console.log('两次计算结果是否相等：', prevCalcValue === calcValue);
+  return (
+    <div>
+      <div>Count is {count}</div>
+       <div>Total is {total}</div>
+      <br/>
+      <div>
+        <button onClick={handleCount}>Increment Count</button>
+        <button onClick={handleTotal}>Increment Total</button>
+      </div>
+    </div>
+  )
+}
+
+ReactDOM.render(<App />, document.body)
+
+
+```

@@ -1,3 +1,17 @@
+- [Install](#install)
+- [运行第一个测试](#运行第一个测试)
+- [cypress语法](#cypress语法)
+- [编写测试流程](#编写测试流程)
+- [一个真实的测试](#一个真实的测试)
+  - [访问测试页面](#访问测试页面)
+  - [查询元素](#查询元素)
+  - [点击元素](#点击元素)
+  - [进行断言](#进行断言)
+- [调试](#调试)
+  - [调试命令](#调试命令)
+- [调试本地程序](#调试本地程序)
+- [测试策略](#测试策略)
+  - [制造数据](#制造数据)
 # Install
 安装![Cypress](https://docs.cypress.io/guides/getting-started/installing-cypress.html)，并运行它的UI工具。
 ```json
@@ -183,3 +197,63 @@ describe('My First Test', () => {
 })
 ```
 ![](https://tva1.sinaimg.cn/large/0081Kckwgy1gky58klcykj30fn077dgb.jpg)
+
+
+# 调试本地程序
+1. 开启本地服务（前端服务）
+2. 访问本地服务
+3. 配置化访问本地服务
+
+开启一个本地服务例如localhost:8080，然后访问它
+```javascript
+describe('The Home Page', () => {
+    it('successfully loads', () => {
+        cy.visit('http://localhost:8080')
+    })
+})
+
+```
+
+还可以通过配置cypress.json的方式来访问：
+```json
+{
+    "baseUrl": "http://localhost:8080"
+}
+
+```
+这样配置后，会自动的调用cy.visit()和cy.request()
+```javascript
+describe('The Home Page', () => {
+    it('successfully loads', () => {
+        cy.visit('/');
+    })
+})
+
+```
+
+# 测试策略
+如何去测试、测试的边界和回归都决定于你和你的应用以及团队。但是依然有一些现代的web测试经验。
+
+## 制造数据
+总的来说，我们的web应用是受控于服务端的。我们使用JSON来与服务端进行通信，服务端的职责是返回能够反映某种状态的数据，一般来自于数据库。在自动化测试之前，web应用所做的就是CURD。去测试不同页面的状态，例如空页面或者分页页面，我们需要服务端才能使得状态能够被测试。
+
+为了制造数据，有很多策略，在Cypress中有三种方法来帮助我们：
+- cy.fixture(): 获取fixture数据
+- cy.exec(): to run system commands 执行系统命令
+- cy.task(): to run code in Node via the pluginsFile 在Node中执行代码
+- cy.request(): to make HTTP requests 发起一个HTTP请求
+
+如果你正在运行Node在你的服务端，你可能会在执行一个npm任务时，添加before和beforeEach的钩子函数：
+```javascript
+describe('The Home Page', () => {
+    beforeEach(() => {
+        // reset and seed the database prior to every test
+        cy.exec('npm run db:reset && npm run db:seed');
+    });
+    
+    it('successfully loads', () => {
+        cy.visit('/');
+    })
+})
+
+```
