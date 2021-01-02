@@ -54,10 +54,6 @@ test('renders learn react link', () => {
 2. 利用react测试库获取元素
 3. 利用Jest来进行写测试用例和断言
 
-我们可以在App.test.js的同级目录下加上上述的测试，测试结果如下:
-![my.test.js](https://tva1.sinaimg.cn/large/0081Kckwgy1glq0dmcpk6j31ce0oc4qq.jpg)
-
-管中窥豹，可以看到Jest和React测试库的职责是不同的，react测试库是跟react打交道，Jest是跟测试用例打交道。  
 ```javascript
 function sum(x, y) {
   return x + y;
@@ -70,6 +66,11 @@ describe('sum', () => {
 });
 
 ```
+我们可以在App.test.js的同级目录下加上上述的测试，测试结果如下:
+![my.test.js](https://tva1.sinaimg.cn/large/0081Kckwgy1glq0dmcpk6j31ce0oc4qq.jpg)
+
+管中窥豹，可以看到Jest和React测试库的职责是不同的，react测试库是跟react打交道，Jest是跟测试用例打交道。  
+
 在实际的JS项目中，通常上述的sum函数会在另一个文件，而测试用例会在test文件，我们会在test文件里面引入函数：
 ```javascript
 import sum from './math.js';
@@ -81,7 +82,7 @@ describe('sum', () => {
 })
 
 ```
-> 在上述案例中，我们还没看到Jest去操作React组件，再来看Jest是一个测试的runner，理解是不是更加深刻了？Jest给与我们运行测试的能力，除此之外，jest还提供了一系列API，例如test suites(测试套件，describe)、test cases(测试用例，it、test)、assertions(断言,expect)，当然jest提供的还不止这些，还有(spies、mocks、stubs等等)。
+> 在上述案例中，我们还没看到Jest去操作React组件，Jest更像是一个测试的runner，理解是不是更加深刻了？Jest给与我们运行测试的能力，除此之外，jest还提供了一系列API，例如test suites(测试套件，describe)、test cases(测试用例，it、test)、assertions(断言,expect)，当然jest提供的还不止这些，还有(spies、mocks、stubs等等)。
 
 React测试库，和jest是截然不同的，它是其中一个可以测试React组件的库(还有Enzyme等)。
 
@@ -218,7 +219,7 @@ describe('App', () => {
 尽管查询函数（getByText）等在查询不到满足条件的元素时会报错，但依然建议使用expect去进行断言，因为getByText等查询参数的报错会阻止测试程序继续进行下去。
 
 getByText在传递字符串的情况下，查找规则是精准匹配，可以正则的形式进行模糊匹配：
-```javascrsipt
+```javascript
 expect(screen.getByText(/Search/)).toBeInTheDocument();
 ```
 其他的元素查询函数：
@@ -229,7 +230,6 @@ expect(screen.getByText(/Search/)).toBeInTheDocument();
 - getByDisplayValue: ```<input value="JavaScript">```
 - getByTestId: ```<any data-testid="xxx">```
 
-**getByTestId**，需要我们将data-testid属性赋予到元素上。
 
 除此之外，还有queryByxxx和findByxxx的查询函数：
 - queryByText/findByText
