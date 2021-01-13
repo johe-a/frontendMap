@@ -1,6 +1,6 @@
 
 # 前言
-参考自cypress官方提供的博客：[文章链接](https://glebbahmutov.com/blog/test-the-interface/)，博客提供了一个很好的例子帮助我么从Jest+React Testing Library到Cypress + cypress-react-unit-test迁移。
+参考自cypress官方提供的博客：[文章链接](https://glebbahmutov.com/blog/test-the-interface/)，博客提供了一个很好的例子帮助我们从Jest+React Testing Library到Cypress + cypress-react-unit-test迁移。
 
 # 开始
 首先通过CRP(create-react-app)来创建一个标准的react应用，默认情况下，通过CRP创建的应用已经内置了Jest+React Testing Library，我们可以通过查看package.json来验证：
@@ -377,7 +377,7 @@ export default function Login ({ onSubmit }) {
 import React from 'react';
 import Login from '../Login';
 import { screen, render, fireEvent } from '@testing-library/react';
-// 待测试
+
 describe('form', async () => {
   it('submits username and password usting testing-library', () => {
     const username = 'me';
