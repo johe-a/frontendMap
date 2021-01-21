@@ -29,6 +29,27 @@ export class CatsController {
 
 在上面的示例中，当对此端点发出GET请求时，会映射到findAll()处理方法。**注意，此处的函数名称完全是任意的。Nest不会对所选的函数名称附加任何意义。**
 
+在Nest中，路由是由上到下按顺序匹配处理程序的，这意味着：
+- 从上到下，请求处理程序优先级逐渐降低
+- 同一个路由只能对应一个请求处理程序，不能对应多个
+
+请求处理程序优先级逐渐降低：
+```javascript
+@Controller('cats')
+export class CatsController {
+  @Get(':id')
+  getById(@Param('id') id) {
+    
+  }
+  @Get('catch')
+  catch() {
+
+  }
+}
+
+```
+由于:id会/cats/后紧跟的path作为id，所以/cats/catch会被/cats/:id捕获，由于路由从上到下处理，上面捕获的路由在下面则忽视，所以catch的处理程序并不会执行。
+
 ## 响应
 
 此函数将返回 **200** 状态代码和相关的响应，在这种情况下只返回了一个字符串。 为什么会这样？ 首先介绍下Nest使用两种不同的操作响应选项概念：
@@ -188,7 +209,23 @@ findOne(@Param('id') id): string {
 }
 
 ```
+因为Controller也是路由的一部分，所以在@Controller装饰器上也可以设置路由参数，在@Controller上设置的路由参数，在所有的请求处理程序内都可以通过@Param获取。
+```javascript
+@Controller('accounts/:account')
+export class AccountController {
+  @Get('resource1/:someparam')
+  getResource(@Param('account') account, @Param('someparam') someparam) {
 
+  }
+   
+  @Get()
+  getAccount(@Param('account') account) {
+
+  }
+
+}
+
+```
 
 ## POST请求参数
 之前的POST路由处理程序不接受任何客户端参数。如果要获取POST请求参数，可以使用 **@Body()** 参数来解决。
@@ -699,5 +736,87 @@ consumer
 const app = await NestFactory.create(AppModule);
 app.use(logger);
 await app.listen(3000);
+
+```
+
+
+# 异常过滤器
+Nest内置的异常层负责处理整个应用程序中的所有抛出的异常。当捕获到未处理的异常时，最终用户将受到友好的响应。
+
+每个异常都由全局异常过滤器处理，该过滤器处理类型 **HttpException及其子类** 的异常，当这个异常无法被识别时(既不是HttpException也不是继承的类HttpException)，用户将收到以下JSON响应：
+```javascript
+{
+  "statusCode": 500,
+  "message": "Internal server error"
+}
+
+```
+
+## 基础异常类
+Nest提供了一个内置的HttpException类，它从@nestjs/common包中导出。
+
+假设在CatsController类里，我们有一个findAll()方法(GET路由)。假设此路由处理程序由于某种原因引发异常：
+```javascript
+import { Get, HttpException, HttpStatus.FORBIDDEN } from '@nestjs/common'
+@Get()
+async findAll() {
+  throw new HttpException('Forbidden', HttpStatus.FORBIDDEN);
+}
+
+```
+当客户端访问该路由时，响应如下所示：
+```javascript
+{
+  "statusCode": 403,
+  "message": "Forbidden"
+}
+
+```
+**HttpException** 构造函数有两个必要的参数来决定响应：
+- response: 参数定义JSON响应体，可以是string或object
+- status: 参数定义HTTP状态代码
+
+默认的响应主体包含两个属性：
+- statusCode: 默认为status参数中提供的HTTP状态代码
+- message: 基于状态的HTTP错误的简短描述
+
+响应主体根据HttpException的response参数类型进行显示：
+- 当response设置的是一个string时，采用默认的响应主体。此时：
+  - response提供的值将作为默认响应主体的message。
+  - status提供的值作为statusCode，并且设置Header的Status Code字段。
+- 当response设置的是一个Object时，采用Object作为响应主体。此时：
+  - response提供的Object将作为响应主体
+  - status提供的值仅仅设置Header的Status Code字段。
+
+一个覆盖响应体的例子：
+```javascript
+@Get()
+async findAll() {
+  throw new HttpException({
+    status: HttpStatus.FORBIDDEN,
+    error: 'This is a custom error message',
+  }, HttpStatus.FORBIDDEN);
+}
+
+```
+
+## 自定义异常
+在许多情况下，我们无需编写自定义异常，而可以使用内置的Nest HTTP异常。如果真的需要创建自定义的异常，最好创建自己的异常层次结构。
+其中自定义异常从HttpException类继承。使用这种方法，Nest可以识别异常，并自动处理错误响应。
+```javascript
+// forbidden.exception.ts
+export class ForbiddenException extends HttpException {
+  constructor() {
+    super('Forbidden', HttpStatus.FORBIDDEN);
+  }
+}
+
+```
+在CatsController内使用：
+```javascript
+@Get()
+async findAll() {
+  throw new ForbiddenException();
+}
 
 ```
