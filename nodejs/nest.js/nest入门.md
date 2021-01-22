@@ -820,3 +820,513 @@ async findAll() {
 }
 
 ```
+
+# 管道
+> 管道是具有@Injectable装饰器的类。管道应该实现PipeTransform接口。
+
+![](https://tva1.sinaimg.cn/large/008eGmZEgy1gmve3xpmg1j30n50d6mx5.jpg)
+
+管道有两个类型：
+- 转换：管道将输入数据转换为所需的数据输出。
+- 验证：对输入数据进行验证，如果验证成功继续传递，验证失败则抛出异常。
+
+在这两种情况下，**Nest会在调用控制器的理由处理程序之前插入管道，管道回显拦截方法的调用参数，进行转换或者是验证处理，然后用准换好或者是验证好的参数调用原方法。**
+
+管道在异常区域内运行。这意味着当抛出异常时，它们由核心异常处理程序和应用于当前上下文的 异常过滤器 处理。当在 Pipe 中发生异常，controller 不会继续执行任何方法。
+
+## 自定义管道
+Nest自带六个开箱即用的管道，从@nestjs/common包中导出即：
+- ValidationPipe
+- ParseIntPipe
+- ParseBoolPipe
+- ParseArrayPipe
+- ParseUUIDPipe
+- DefaultValuePipe
+
+手动构建一个ValidationPipe:
+```javascript
+// validate.pipe.ts
+
+import { PipeTransform, Injectable, ArgumentMetadata } from '@nestjs/common';
+
+@Injectable()
+export class ValidationPipe implements PipeTransform {
+  transform(value: any, metadata: ArgumentMetadata) {
+    return value;
+  }
+}
+
+```
+> PipeTransform<T, R>是一个通用接口，其中T表示value的类型，R表示transform()方法的返回类型。
+
+**每个管道必须提供transform()方法**，这个方法有两个参数：
+- value: 当前处理的参数
+- metadata：元数据
+元数据对象包含一些属性：
+```javascript
+export interface ArgumentMetadata {
+  type: 'body' | 'query' | 'param' | 'custom';
+  metaType?: Type<unknow>;
+  data?: string;
+}
+
+```
+| 参数 | 描述 |
+|---|---|
+| type | 告诉我们该属性是一个请求实体@Body()、查询参数@Query()还是路径参数@Param()，还是自定义参数 |
+| metatype | 属性的元类型，例如String，如果在函数签名中省略类型声明，或者使用原生JavaScript，则为undefined |
+| data | 传递给装饰器的字符串，例如@Body('test')，如果括号留空，则为undefined |
+
+> Typescript接口在编译期间消失，所以我们的DTO使用的接口而不是类的话，metatype的值将是一个Object。
+
+
+## 验证路由处理程序的参数
+我们来关注一下CatsController的create()方法。
+
+```javascript
+@Post()
+async create(@Body() createCatDto: CreateCatDto) {
+  this.catsService.create(createCatDto);
+}
+
+```
+
+CreateCatDto的声明:
+```javascript
+export class CreateCatDto {
+  name: string;
+  age: number;
+  breed: string;
+}
+
+```
+我们要确保create方法能够正确的执行，则必须验证CreateCatDto里的三个属性。**虽然我们可以在路由处理程序方法中做到这一点，但是我们会打破单个责任原则(SRP,Single Resposibility Pricinple)。另一种方法是创建一个验证器类，并在那里委托任务。但是我们不得不每次都在方法开始的时候使用这个验证器。那么使用中间件验证呢？这可能是一个好主意，但是我们不可能创建一个整个应用程序通用的中间件，因为中间件不知道执行的环境，也不知道要调用的函数和它的参数（虽然可以获取到请求参数，但是不能知道它的DTO）**
+
+在这种验证参数的场景下，我们应该使用管道。
+
+## 配合Joi进行结构验证
+有几种方式可以实现，一种常见的方式是使用基于结构的验证。[joi](https://github.com/sideway/joi)库允许我们使用一个可读的API以非常简单的方式创建schema(schema可以理解为ts中的Interface，只是通过joi来声明)。TS的类型验证不能再运行时进行验证，所以我们需要其他的结构声明&验证的库，joi库就能满足我们的要求。
+
+```javascript
+npm install --save @hapi/joi
+npm install --save-dev @types/hapi__joi
+
+```
+joi的简单使用，声明一个结构，并对参数进行结构的验证：
+```javascript
+import * as Joi from '@hapi/joi';
+
+const user = {
+  username: 'johe'
+}
+
+const user2 = {
+  username: 'j'
+}
+
+const schema = Joi.object({
+  username: Joi.string().min(3).max(30).required(),
+  password: Joi.string().pattern(new RegExp('^[a-zA-Z0-9]{3,30}$')),
+  repeat_password: Joi.ref('password'),
+  birth_year: Joi.number().integer().min(1900).max(2020),
+});
+
+// { value: { username: 'johe' }}
+console.log(schema.validate(user));
+/* { 
+    value: { username: 'j'}, 
+    error: { 
+      details: [{
+        message: "username" length must be at least 3 characters long"
+        ...
+      }] 
+    }
+  }
+*/
+console.log(schema.validate(user2));
+```
+我们通过Joi库创建了一个schema(schema可以理解为结构)，这个schema的username字段是必填的，并且必须是长度在3到30之间的字符串，然后通过schema的验证方法，我们可以验证输入的参数是否符合schema的规则。在正确的情况下，返回的字段里没有error，错误的情况下则有具体的error错误信息。
+
+在下面的代码中，我们首先创建一个简单的class，在构造函数中传递schema参数，然后使用schema.validate()方法验证, 这段代码中，还没有指定控制器方法需要的schema。
+```javascript
+import { PipeTransform, Injectable, ArgumentMetadata, BadRequestException } from '@nestjs/common';
+import { ObjectSchema } from '@hapi/joi';
+
+@Injectbale()
+export class JoiValidationPipe implements PipeTransform {
+  constructor(private schema: ObjectSchema) {}
+
+  transform(value: any, metadata: ArgumentMetadata) {
+    const { error } = this.schema.validate(value);
+    if (error) {
+      throw new BadRequestException('Validation failed');
+    }
+    return value;
+  }
+}
+
+```
+**绑定管道**，可以绑定在controller或者其方法上，我们可以使用 **@UsePipes()** 装饰器并创建一个管道实例。
+
+```javascript
+@Post()
+@UsePipes(new JoiValidationPipe(createCatSchema))
+async create(@Body() createCatDto: CreateCatDto) {
+  this.catsService.create(createCatDto);
+}
+
+```
+
+## 配合class-validator的类验证器
+class-validator允许我们基于装饰器的验证。装饰器的功能非常强大，尤其是与Nest的Pipe功能相结合时使用，我们可以通过访问metatype信息做很多事情。
+```shell
+npm install --save class-validator class-transformer
+```
+安装完成后，我们就可以向CreateCatDto类添加一些装饰器
+```javascript
+// create-cat.dto.ts
+import { IsString, IsInt } from 'class-validator';
+
+export class CreateCatDto {
+  @IsString()
+  name: string;
+
+  @IsInt()
+  age: number;
+
+  @IsString()
+  breed: string;
+}
+
+```
+类似的装饰器还有：@Length、@Contains()、@IsDate()等等，具体查看[class-validator](https://github.com/typestack/class-validator)
+
+在接下来的代码示例中，用到了class-validator和[class-transformer](https://github.com/typestack/class-transformer),如果不明白这两个库的使用，看代码会有点懵，所以这里分别介绍下这两个库的使用和配合，这两个库的开发者是同一个人，并完成了很好的协同。
+
+### class-transformer
+
+#### 简介
+在JS中,有两种类型对象：
+- plain(literal)objects：对象字面量
+- class(constructor)objects: 类
+
+对象字面量(Plain objects)是Object构造函数的实例，而类对象是类的实例(类会定义构造函数、属性、及其方法等)。
+
+也就是说plain objects通常是长这样的：
+```javascript
+const obj = {
+  a: 1
+}
+
+const obj2 = new Object({
+  a: 1
+})
+```
+而类对象通常是这样的：
+```javascript
+class Obj {
+  public readonly a: number;
+}
+
+```
+**有的时候，我们需要将对象字面量转换成类对象，例如我们从后端加载json数据，通过JSON.parse进行解析之后，我们拥有了一个对象字面量，而不是一个已有DTO类的实例。**
+
+例如我们现在有一个user.json:
+```json
+[
+  {
+    "id": 1,
+    "firstName": "Johny",
+    "lastName": "Cage",
+    "age": 27
+  },
+  {
+    "id": 2,
+    "firstName": "Ismoil",
+    "lastName": "Somoni",
+    "age": 50
+  },
+  {
+    "id": 3,
+    "firstName": "Luke",
+    "lastName": "Dacascos",
+    "age": 12
+  }
+]
+
+```
+然后我们还有一个User的类：
+```javascript
+export class User {
+  id: number;
+  firstName: string;
+  lastName: string;
+  age: number;
+
+  getName() {
+    return this.firstName + ' ' + this.lastName;
+  }
+
+  isAdult() {
+    return this.age > 36 && this.age < 60;
+  }
+}
+
+```
+这个时候，我们可能会假设我们正在下载用户列表，这些用户的数据类型就是User：
+```javascript
+fetch('users.json').then((users: User[]) => {
+  // 我们在使用users的时候，类型提示能够得到很好的支持
+  // 但是users的成员实际上并不是User的实例
+  // 这意味着你不能使用User类的方法
+})
+
+```
+在这段代码中，我们可以使用```users[0].id```或者```users[0].firstName```去访问User属性，但是我们没办使用```users[0].getName()```或者```users[0].isAdult()```，因为users的成员实际上并不是User类的实例，而是对象字面量。实际上这种写法只是欺骗了我们的编译器。
+
+那么我们应该怎么做？如何让users数组的每个成员都称为User类的实例而不是字面量对象？其中一个解决方案是创建一个新的User类实例，然后再手动的奖所有属性都复制到这个新的User类实例里面。我们会很快的发现错误，当对象字面量的结构很复杂的时候。
+
+这个时候就是class-transformer发挥作用的时候了，**class-transformer库的目的就是帮助我们将对象字面量映射称为我们已有类的实例**，按上面的例子来说，就是我们将users数组的对象字面量成员映射为User的实例。
+```javascript
+fetch('users.json').then((users: Object[]) => {
+  const realUsers = plainToClass(User, users);
+  // 现在每一个realUsers的成员都成为了User的实例
+})
+
+```
+通过plaginToClass转化后，我们现在可以通过使用User的方法，例如```users[0].getName()```和```user[0].isAdult()```
+
+#### 安装
+Node端安装：
+```shell
+npm install class-transformer --save
+npm install reflect-metadata --save
+// optional可选
+npm install es6-shim --save
+```
+其中**reflect-metadata**需要在全局中引入，例如app.ts:
+```javascript
+import 'reflect-metadata';
+```
+**es6-shim**模块是可选的，如果我们正在使用低版本不支持ES6的Node，则需要安装，并且同样在全局引入。
+
+#### 方法
+class-transformer包含以下方法：
+- plainToClass(A, B): 这个方法转化对象字面量B为类A的实例，B可以是对象字面量数组。
+- plainToClassFromExist(A', B): 这个方法将对象字面量B和类A的实例A'混合成一个新的实例
+- classToPlain(A')：这个方法将A的实例A‘转化成对象字面量
+- classToClass(A')：用于深拷贝实例
+- seriablize(A'): 用于序列化实例，等同于classToPlain之后再JSON.stringify
+- deserialize(A, B)和deserializeArray(A, ArrayOfB)：用于反序列化JSON为A的实例
+
+使用例子：
+```javascript
+// plainToClass
+import { plainToClass } from 'class-transformer';
+
+let users = plainToClass(User, userJson); // to convert user plain object a single user. also supports arrays
+
+// plainToClassFronExist
+const defaultUser = new User();
+defaultUser.role = 'user';
+
+let mixedUser = plainToClassFromExist(defaultUser, user); // mixed user should have the value role = user when no value is set otherwise.
+
+// classToPlain
+import { classToPlain } from 'class-transformer';
+let photo = classToPlain(photo);
+
+
+// classToClass
+import { classToClass } from 'class-transformer';
+let photo = classToClass(photo);
+
+// serialize
+import { serialize } from 'class-transformer';
+let photo = serialize(photo);
+
+// deseriablize
+import { deserialize } from 'class-transformer';
+let photo = deserialize(Photo, photo);
+```
+**plainToClass方法，作用是将所有的对象字面量属性，设置到Class的实例内，尽管Class实例并没有声明这个属性**
+```javascript
+import { plainToClass } from 'class-transformer';
+
+class User {
+  id: number;
+  firstName: string;
+  lastName: string;
+}
+
+const fromPlainUser = {
+  unknowProp: 'hello',
+  firstName: 'Umed',
+  lastName: 'Khudoiberdiev'
+}
+
+console.log(plainToClass(User, fromPlainUser));
+/*
+  User {
+    unknowProp: 'hello there',
+    firstName: 'Umed',
+    lastName: 'Khudoiberdiev',
+  }
+*/
+
+```
+如果这个行为不符合你的要求，可以使用excludeExtraneousValues配置选项并且Expose所有的Class属性：
+```javascript
+import { Expose, plainToClass } from 'class-transformer';
+
+class User {
+  @Expose() id: number;
+  @Expose() firstName: string;
+  @Expose() lastName: string;
+}
+
+const fromPlainUser = {
+  unkownProp: 'hello there',
+  firstName: 'Umed',
+  lastName: 'Khudoiberdiev',
+};
+
+console.log(plainToClass(User, fromPlainUser, { excludeExtraneousValues: true }));
+
+// User {
+//   id: undefined,
+//   firstName: 'Umed',
+//   lastName: 'Khudoiberdiev'
+// }
+
+```
+
+### class-validator
+class-validator简单来说就是提供类型声明和验证的库。
+
+```javascript
+npm install class-validator --save
+```
+
+#### 使用
+在创建Class的时候，将class-validator提供的装饰器去装饰我们想要验证的属性，然后我们在实例化Class的时候，设置属性时会进行验证，也可以通过validate方法来验证实例是否满足Class的属性类型声明。
+```javascript
+import {
+  validate,
+  validateOrReject,
+  Contains,
+  IsInt,
+  Length,
+  IsEmail,
+  IsFQDN,
+  IsDate,
+  Min,
+  Max,
+} from 'class-validator';
+
+export class Post {
+  @Length(10, 20)
+  title: string;
+
+  @Contains('hello')
+  text: string;
+
+  @IsInt()
+  @Min(0)
+  @Max(10)
+  rating: number;
+
+  @IsEmail()
+  email: string;
+
+  @IsFQDN()
+  site: string;
+
+  @IsDate()
+  createDate: Date;
+}
+
+let post = new Post();
+post.title = 'Hello'; // should not pass
+post.text = 'this is a great post about hell world'; // should not pass
+post.rating = 11; // should not pass
+post.email = 'google.com'; // should not pass
+post.site = 'googlecom'; // should not pass
+
+validate(post).then(errors => {
+  // errors is an array of validation errors
+  if (errors.length > 0) {
+    console.log('validation failed. errors: ', errors);
+  } else {
+    console.log('validation succeed');
+  }
+});
+
+validateOrReject(post).catch(errors => {
+  console.log('Promise rejected (validation failed). Errors: ', errors);
+});
+// or
+async function validateOrRejectExample(input) {
+  try {
+    await validateOrReject(input);
+  } catch (errors) {
+    console.log('Caught promise rejection (validation failed). Errors: ', errors);
+  }
+}
+```
+返回的errors是一个ValidationError的对象数组，每一个ValidationError的结构如下：
+```json
+{
+    target: Object; // Object that was validated.
+    property: string; // Object's property that haven't pass validation.
+    value: any; // Value that haven't pass a validation.
+    constraints?: { // Constraints that failed validation with error messages.
+        [type: string]: string;
+    };
+    children?: ValidationError[]; // Contains all nested validation errors of the property
+}
+```
+在我们的例子中，错误可能会是这样：
+```javascript
+[{
+    target: /* post object */,
+    property: "title",
+    value: "Hello",
+    constraints: {
+        length: "$property must be longer than or equal to 10 characters"
+    }
+}, {
+    target: /* post object */,
+    property: "text",
+    value: "this is a great post about hell world",
+    constraints: {
+        contains: "text must contain a hello string"
+    }
+},
+// and other errors
+]
+
+```
+我们可以在装饰器的配置内设置验证的具体信息，当我们使用validate方法验证的时候，验证的错误信息会被返回给ValidationError对象。并且可以使用模板字符串：
+- $value: 被验证的值
+- $property: 被验证的属性
+- $target: 被验证的class名
+- $constraint1,$constraint2,... 装饰器的值
+```javascript
+import { MinLength, MaxLength, ValidationArguments } from 'class-validator';
+
+export class Post {
+  @MinLength(10, {
+    message: (args: ValidationArguments) => {
+      if (args.value.length === 1) {
+        return 'Too short, minimum length is 1 character';
+      } else {
+        return 'Too short, minimum length is ' + args.constraints[0] + ' characters';
+      }
+    },
+  })
+  title: string;
+}
+
+
+```
