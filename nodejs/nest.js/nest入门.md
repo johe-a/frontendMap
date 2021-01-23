@@ -1,3 +1,53 @@
+- [安装](#安装)
+- [控制器-controller](#控制器-controller)
+  - [路由](#路由)
+  - [响应](#响应)
+  - [Request请求](#request请求)
+  - [Restful API](#restful-api)
+  - [路由通配符](#路由通配符)
+  - [状态码设置](#状态码设置)
+  - [Headers响应头](#headers响应头)
+  - [重定向](#重定向)
+  - [路由参数](#路由参数)
+  - [POST请求参数](#post请求参数)
+  - [完整的Restful例子](#完整的restful例子)
+  - [注册到模块](#注册到模块)
+- [提供者Providers](#提供者providers)
+  - [服务](#服务)
+  - [依赖注入](#依赖注入)
+  - [生命周期](#生命周期)
+  - [注册提供者到模块](#注册提供者到模块)
+- [模块](#模块)
+  - [功能模块](#功能模块)
+  - [共享模块](#共享模块)
+  - [模块导出](#模块导出)
+  - [依赖注入](#依赖注入-1)
+  - [全局模块](#全局模块)
+- [中间件](#中间件)
+  - [依赖注入](#依赖注入-2)
+  - [应用中间件](#应用中间件)
+  - [中间件消费者](#中间件消费者)
+  - [函数式中间件](#函数式中间件)
+  - [全局中间件](#全局中间件)
+- [异常过滤器](#异常过滤器)
+  - [基础异常类](#基础异常类)
+  - [自定义异常](#自定义异常)
+- [管道](#管道)
+  - [自定义管道](#自定义管道)
+  - [验证路由处理程序的参数](#验证路由处理程序的参数)
+  - [配合Joi进行结构验证](#配合joi进行结构验证)
+  - [配合class-validator的类验证器](#配合class-validator的类验证器)
+    - [class-transformer](#class-transformer)
+      - [简介](#简介)
+      - [安装](#安装-1)
+      - [方法](#方法)
+    - [class-validator](#class-validator)
+      - [使用](#使用)
+    - [类验证器](#类验证器)
+    - [使用管道](#使用管道)
+    - [全局管道](#全局管道)
+  - [转换管道](#转换管道)
+  - [内置验证管道](#内置验证管道)
 # 安装
 [nest官网](https://docs.nestjs.cn/7/firststeps)
 
@@ -874,7 +924,7 @@ export interface ArgumentMetadata {
 | 参数 | 描述 |
 |---|---|
 | type | 告诉我们该属性是一个请求实体@Body()、查询参数@Query()还是路径参数@Param()，还是自定义参数 |
-| metatype | 属性的元类型，例如String，如果在函数签名中省略类型声明，或者使用原生JavaScript，则为undefined |
+| metatype | 属性的元类型(就是参数的类型，如果是DTO则返回DTO，如果是string则返回String构造函数)，例如String，如果在函数签名中省略类型声明，或者使用原生JavaScript，则为undefined |
 | data | 传递给装饰器的字符串，例如@Body('test')，如果括号留空，则为undefined |
 
 > Typescript接口在编译期间消失，所以我们的DTO使用的接口而不是类的话，metatype的值将是一个Object。
@@ -1330,3 +1380,132 @@ export class Post {
 
 
 ```
+
+### 类验证器
+上文中已经介绍了class-transformer和class-validation的使用，可以知道这两个库分别的作用:
+- class-transformer: 将对象字面量和class实例进行互相转换的库
+- class-validation: 提供class属性类型声明的装饰器以及验证方法
+
+假设我们现在需要对请求的参数进行验证，验证入参是否满足我们声明的DTO结构，来看下管道的写法：
+```javascript
+// validate.pipe.ts
+import { PipeTransform, Injectable, ArgumentMetadata, BadRequestException } from '@nest/common';
+import { validate } from 'class-validator';
+import { plainToClass } from 'class-transformer';
+
+@Injectable()
+export class ValidationPipe implements PipeTransform<any> {
+  async transform(value: any, { metatype }: ArgumentMetadata) {
+    if (!metatype) {
+      return value;
+    }
+    const object = plainToClass(metatype, value);
+    const errors = await validate(object);
+    if (errors.length > 0) {
+      throw new BadRequestException('Validation failed');
+    }
+    return value;
+  }
+}
+```
+上面的代码做了什么？让我们来一步步分析：
+1. 实现一个管道
+   1. 实现PipeTransform接口，该接口泛型的第一个参数为transform方法的传入值，第二个参数为返回值。
+2. 使用class-transformer提供的plainToClass将传入的数据转换为meatatype的实例。
+3. 通过class-validator提供的validate将metatype实例进行验证，如果验证不通过则返回BadRequestException异常。
+
+注意上面的transform是异步的，由于class-validator的验证是可以异步的，所以Nest支持同步和异步的管道。
+
+### 使用管道
+参数范围的管道：
+```javascript
+@Post()
+async create(@Body(new ValidationPipe()) createCatDto: CreateCatDto) {
+
+}
+
+```
+方法范围的管道需要使用UsePipes()装饰器：
+```javascript
+import { Post, UsePipes } from '@nestjs/common';
+@Post()
+@UsePipes(new ValidationPipe())
+async create(@Body() createCatDto: CreateCatDto) {
+
+}
+
+```
+
+### 全局管道
+```javascript
+async function bootstrap() {
+  const app = await NestFactory.create(AppModule);
+  app.useGlobalPipes(new ValidationPipe());
+  await app.listen(3000);
+}
+bootstrap();
+
+```
+全局管道用于整个应用程序、每个控制器和每个路由处理程序。就依赖注入而言，从任何模块外部注册的全局管道（如上例所示）无法注入依赖，因为它们不属于任何模块。为了解决这个问题，可以使用以下构造直接为任何模块设置管道：
+```javascript
+import { Module } from '@nestjs/common';
+import { APP_PIPE } from '@nestjs/core';
+
+@Module({
+  providers: [
+    {
+      provide: APP_PIPE,
+      useClass: ValidationPipe
+    }
+  ]
+})
+export class AppModule {}
+
+
+```
+
+## 转换管道
+验证不是管道唯一的用处。在本章的开始部分，已经提到管道也可以将输入数据转换为所需的输出。这是可以的，因为从 transform 函数返回的值完全覆盖了参数先前的值。在什么时候使用？将客户端传来的数据经过一些修改，例如：
+- 字符串转化为正数
+- 有些数据具有默认值，用户不传时使用默认值
+
+> 转换管道被插入在客户端请求和请求处理程序之间用来处理客户端请求。
+
+例如：
+```javascript
+import { PipeTransform, Injectable, ArgumentMetadata, BadRequestException } from '@nestjs/common';
+
+@Injectable()
+export class ParseIntPipe implements PipeTransform<string, number> {
+  transform(value: string, metadata: ArgumentMetadata): number {
+    const val = parseInt(value, 10);
+    if (isNaN(val)) {
+      throw new BadRequestException('Validation failed');
+    }
+    return val;
+  }
+}
+
+```
+处理参数id:
+```javascript
+@Get(':id')
+async findOne(@Param('id', new ParseIntPipe()) id) {
+  return await this.catsService.findOne(id);
+}
+
+
+```
+我们可以在管道内根据ID从数据库中选择一个现有的用户实体：
+```javascript
+@Get(':id')
+findOne(@Param('id', UserByIdPipe) userEntity: UserEntity) {
+  return userEntity;
+}
+
+```
+这个管道接收 id 参数并返回 UserEntity 数据, 这样做就可以抽象出一个根据 id 得到 UserEntity 的公共管道, 你的程序变得更符合声明式(Declarative 更好的代码语义和封装方式), 更 DRY (Don’t repeat yourself 减少重复代码) 编程规范.
+
+
+## 内置验证管道
+ValidationPipe和ParseIntPipe是内置管道，因此您不必自己构建这些管道（请记住， ValidationPipe 需要同时安装 class-validator 和 class-transformer 包）。与本章中构建ValidationPipe的示例相比，该内置的功能提供了[更多](https://docs.nestjs.cn/7/techniques/validation)的选项。
