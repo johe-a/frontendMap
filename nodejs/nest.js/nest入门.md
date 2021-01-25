@@ -48,6 +48,9 @@
     - [全局管道](#全局管道)
   - [转换管道](#转换管道)
   - [内置验证管道](#内置验证管道)
+- [守卫](#守卫)
+  - [授权守卫](#授权守卫)
+  - [执行上下文](#执行上下文)
 # 安装
 [nest官网](https://docs.nestjs.cn/7/firststeps)
 
@@ -1509,3 +1512,47 @@ findOne(@Param('id', UserByIdPipe) userEntity: UserEntity) {
 
 ## 内置验证管道
 ValidationPipe和ParseIntPipe是内置管道，因此您不必自己构建这些管道（请记住， ValidationPipe 需要同时安装 class-validator 和 class-transformer 包）。与本章中构建ValidationPipe的示例相比，该内置的功能提供了[更多](https://docs.nestjs.cn/7/techniques/validation)的选项。
+
+
+# 守卫
+> 守卫是一个使用@Injectable()装饰器的类，守卫应该实现CanActivate接口。
+
+![](https://tva1.sinaimg.cn/large/008eGmZEgy1gmyr32z5s4j30p607hmx2.jpg)
+
+守卫有一个单独的责任。它们根据运行时出现的某些条件(例如权限、角色、访问控制列表等)来确定给定的请求是否由路由处理程序处理。这通常称为授权。**在传统的Express应用程序中，通常由中间件处理授权。中间件是身份验证的良好选择。** 到目前为止，访问限制逻辑大多在中间件中。**但是中间件不知道调用next()函数之后会执行哪个处理程序**。**另一方面，守卫可以访问ExecutionContext实例，因此确切的知道接下来要执行什么。**守卫的设计与异常过滤器，管道和拦截器非常相似，目的是让你在请求/响应周期的正确位置插入处理逻辑，并以声明的方式进行插入。这有助于保持代码的简洁和声明性。
+
+> 守卫在每个中间件之后执行，但在任何拦截器或者管道之前执行。
+
+## 授权守卫
+假设我们现在有授权守卫，用户是经过身份验证的，它将提取和验证token，确定请求是否可以继续。
+
+```javascript
+// auth.guard.ts
+import { Injectable, CanActivate, ExecutionContext } from '@nestjs/common';
+import { Observable } from 'rxjs';
+
+@Injectable()
+export class AuthGuard implements CanActivate {
+  CanActivate(context: ExecutionContext):
+    boolean | Promise<boolean> | Observable<boolean> {
+      const request = context.switchToHttp().getRequest();
+      return validateRequest(request);
+    }
+}
+
+```
+如何实现一个守卫？每个守卫必须实现一个canActivate函数（所以需要实现CanActivate）此函数应该返回一个布尔值，指示是否允许当前请求。它可以同步或者异步的返回响应(通过Promise或者Observable)
+- 如果返回true，将处理用户调用
+- false则忽略当前处理的请求
+
+## 执行上下文
+canActivate()函数接受参数ExecutionContext实例。ExecutionContext继承自ArgumentHost，ArgumentHost是传递给原始处理程序的参数包装器。  
+ExecutionContext提供了更多功能，它拓展了ArgumentsHost，但是也提供了有关当前执行过程的更多信息：
+```javascript
+export interface ExecutionContext extends ArgumentHost {
+  getClass<T = any>()： Type<T>;
+  getHandler(): Function;
+}
+
+```
+getHandler()方法返回对将要调用的处理程序的引用。getClass()方法返回这个特定处理程序所属的 Controller 类的类型。例如，如果当前处理的请求是 POST 请求，目标是 CatsController上的 create() 方法，那么 getHandler() 将返回对 create() 方法的引用，而 getClass()将返回一个CatsControllertype(而不是实例)。
