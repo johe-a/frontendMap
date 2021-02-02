@@ -51,6 +51,8 @@
 - [守卫](#守卫)
   - [授权守卫](#授权守卫)
   - [执行上下文](#执行上下文)
+  - [绑定守卫](#绑定守卫)
+  - [元数据与反射器](#元数据与反射器)
 # 安装
 [nest官网](https://docs.nestjs.cn/7/firststeps)
 
@@ -1556,3 +1558,99 @@ export interface ExecutionContext extends ArgumentHost {
 
 ```
 getHandler()方法返回对将要调用的处理程序的引用。getClass()方法返回这个特定处理程序所属的 Controller 类的类型。例如，如果当前处理的请求是 POST 请求，目标是 CatsController上的 create() 方法，那么 getHandler() 将返回对 create() 方法的引用，而 getClass()将返回一个CatsControllertype(而不是实例)。
+
+## 绑定守卫
+与管道和异常过滤器一样，守卫可以是控制器、方法、全局范围的。我们可以使用@UseGuards()装饰器设置一个控制器范围的守卫。  
+这个装饰器可以使用单个参数，也可以使用逗号分隔的参数列表。
+```javascript
+@Controller('cats')
+@UseGuards(RolesGuard)
+export class CatsController {}
+```
+上例，我们已经传递了RolesGuard类型而不是实例，让框架进行实例化，并且启用了依赖注入。和管道、过滤器一样，我们可以传递一个实例：
+```javascript
+@Controller('cats')
+@UseGuards(new RolesGuard())
+export class CatsController {}
+
+```
+为了绑定全局守卫, 我们使用 Nest 应用程序实例的 useGlobalGuards() 方法:
+```javascript
+const app = await NestFactory.create(AppModule);
+app.useGlobalGuards(new RolesGuard());
+
+```
+全局守卫用于整个应用程序, 每个控制器和每个路由处理程序。在依赖注入方面, 从任何模块外部注册的全局守卫 (如上面的示例中所示) 不能插入依赖项, 因为它们不属于任何模块。为了解决此问题, 您可以使用以下构造直接从任何模块设置一个守卫:
+```javascript
+import { Module } from '@nestjs/common';
+import { APP_GUARD } from '@nestjs/core';
+
+@Module({
+  providers: [
+    {
+      provide: APP_GUARD,
+      useClass: RolesGuard,
+    },
+  ],
+})
+export class AppModule {}
+
+```
+
+## 元数据与反射器
+如果CatsController可以为不同的路由提供不同的权限方案，其中一些可能只对管理用户可用，而另一些则可以对所有人开放，这个时候如何利用守卫来完成呢？这时候自定义元数据就可以发挥它的作用了，**Nest提供了通过@SetMetadata()装饰器将定制的元数据附加到路由处理程序。这些元数据提供了我们所缺少的角色数据，守卫根据这些数据和上下文做出决策。**
+```javascript
+// cats.controller.ts
+@Post()
+@SetMetadata('roles', ['admin'])
+async create(@Body() createCatDto: CreateCatDto) {
+  this.catsService.create(createCatDto);
+}
+
+```
+我们将roles元数据(roles是一个key,而['admin']是它的值)附加到create()方法。直接使用@SetMetadata()并不是一个好习惯，相反，我们应该创建自己的装饰器。
+```javascript
+// roles.decorator.ts
+import { SetMetadata } from '@nestjs/common';
+
+export const Roles = (...roles: string[]) => SetMetadata('roles', roles);
+```
+这种方法更简洁、易读，而且是强尅性的。
+```javascript
+// cats.controller.ts
+@Post()
+@Roles('admin')
+async create(@Body() createCatDto: CreateCatDto) {
+  this.catsService.create(createCatDto);
+}
+```
+再次回到守卫，我们希望根据当前用户的角色和当前路由处理程序的所需角色进行比较，根据比较结果做出判断。为了访问路由角色(自定义的元数据)，我们将使用在@nestjs/core提供的Reflector类。
+```javascript
+import { Injectable, CanActivate, ExecutionContext } from '@nestjs/common';
+import { Observable } from 'rxjs';
+import { Reflector } from '@nestjs/core';
+
+@Injectable()
+export class RolesGuard implements CanActivate {
+  constructor(private readonly reflector: Reflector) {}
+
+  canActivate(context: ExecutionContext): boolean {
+    const roles = this.reflector.get<string[]>('roles', context.getHanlder())
+    if (!roles) {
+      return true;
+    }
+    const request = context.switchToHttp().getRequest();
+    const user = request.user;
+    const hasRole = () => user.roles.some((role) => roles.inclueds(role));
+    return user && user.roles && hasRole();
+  }
+}
+```
+context.getHandler()为我们提供了对路由处理程序的引用，放射器Reflector允许我们很容易的通告指定的键和路由处理程序来访问元数据。  
+上面的例子中，key是roles，而路由处理程序是context.getHanlder()，意思是Reflector从context.getHandler()的路由处理程序那取到key为roles的元数据。
+
+返回false的守卫会抛出一个 `HttpException` 异常，如果想要返回未授权异常，请用：
+```javascript
+throw new UnauthorizeException();
+
+```

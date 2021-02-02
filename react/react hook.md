@@ -1,3 +1,17 @@
+- [为什么要用hook](#为什么要用hook)
+- [State Hook](#state-hook)
+  - [惰性初始state](#惰性初始state)
+- [Effect Hook](#effect-hook)
+  - [无需清除的effect](#无需清除的effect)
+    - [使用class的例子](#使用class的例子)
+    - [使用hook的例子](#使用hook的例子)
+  - [需要清除的effect](#需要清除的effect)
+  - [按需调用Effect](#按需调用effect)
+- [useRef](#useref)
+- [useCallback](#usecallback)
+  - [使用useCallack的前后分析](#使用usecallack的前后分析)
+  - [useCallback源码](#usecallback源码)
+- [useMemo](#usememo)
 # 为什么要用hook
 1. 组件之间复用状态逻辑很困难
 React没有提供可复用性行为附加到组件的途径（例如把组件连接到store)。为了解决这个问题，一些库利用高阶组件,例如react-redux，返回容器组件。或者![render props](https://zh-hans.reactjs.org/docs/render-props.html),例如react-router。
