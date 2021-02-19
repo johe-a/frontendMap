@@ -128,6 +128,22 @@ f8f693e nest依赖注入
 ```
 回退到近期总结版本
 ```shell
-git reset HEAD
+git reset 4ab1111
 
+```
+
+## 撤销操作
+任何Git操作都会被记录到git reflog中，我们可以从git reflog中看到我们使用的Git命令历史：
+```shell
+git reflog
+6039719 (HEAD -> master) HEAD@{0}: reset: moving to 6039719
+61506be HEAD@{1}: commit: 撤销测试
+6039719 (HEAD -> master) HEAD@{2}: commit: git撤销
+4268bf3 (origin/master, origin/HEAD) HEAD@{3}: reset: moving to 4268bf3
+b82980a HEAD@{4}: commit: test撤销
+
+```
+如果我们要回退到某个操作之前的状态，可以使用git reset --hard reflogId，例如我们如果要回退到撤销版本库之前：
+```shell
+git reset --hard 61506be
 ```
