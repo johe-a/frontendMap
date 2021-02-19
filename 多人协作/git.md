@@ -99,3 +99,35 @@ rebase过程：
 1. 解决冲突
 2. git add 修改的文件
 3. git rebase --continue
+
+
+# 撤销
+
+## 撤销工作区
+撤销经过git add操作后的文件
+```shell
+git checkout --
+
+```
+
+## 撤销版本库
+回退到上一次commit 
+```shell
+git reset HEAD^
+```
+或者reset具体的commit ID,通过git log --oneline查看提交历史
+```shell
+git log --oneline
+
+4268bf3 (HEAD -> master, origin/master, origin/HEAD) feat: 更新多人协作
+5c22d38 feat: 抽出函数式编程为单独文件夹
+4ab1111 近期总结
+f8f693e nest依赖注入
+7a8a812 更新nest管道
+
+```
+回退到近期总结版本
+```shell
+git reset HEAD
+
+```
