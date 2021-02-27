@@ -12,6 +12,13 @@
   - [使用useCallack的前后分析](#使用usecallack的前后分析)
   - [useCallback源码](#usecallback源码)
 - [useMemo](#usememo)
+- [缓存一个组件](#缓存一个组件)
+  - [React.memo(通过对比函数决定组件更新)](#reactmemo通过对比函数决定组件更新)
+  - [确保传入组件的Props不变化](#确保传入组件的props不变化)
+    - [使用useCallback](#使用usecallback)
+    - [使用useMemo](#使用usememo)
+- [自定义Hook的实践](#自定义hook的实践)
+  - [视图和逻辑拆分](#视图和逻辑拆分)
 # 为什么要用hook
 1. 组件之间复用状态逻辑很困难
 React没有提供可复用性行为附加到组件的途径（例如把组件连接到store)。为了解决这个问题，一些库利用高阶组件,例如react-redux，返回容器组件。或者![render props](https://zh-hans.reactjs.org/docs/render-props.html),例如react-router。
@@ -571,3 +578,201 @@ ReactDOM.render(<App />, document.body)
 
 
 ```
+
+# 缓存一个组件
+在 class 组件中，我们通过 `ShouldComponentUpdate` 的生命周期来对组件进行缓存。在函数式组件中我们应该用什么方法来确保一个组件可缓存？  
+先抛出结论，我们应该要确保以下两点：
+1. 传入的 Props 没有改变的情况下，不重新渲染。
+2. 减少不必要的 Props 变化。
+
+## React.memo(通过对比函数决定组件更新)
+首先认识 React 提供的高阶组件： `React.memo`，默认情况下，通过 `React.memo` 包裹的组件，会返回一个新的组件，该组件只在 Props 变化时进行更新(浅层比较)， 我们也可以通过 `React.memo` 提供的第二个参数来定义 `React.memo` 返回的组件是否更新(例如进行深层比较)。与 `ShouldComponentUpdate` 不同的是， `React.memo` 在比较函数返回 true 时不会更新， 返回 false 时更新，这一点和 `ShouldComponentUpdate` 相反。
+
+```javascript
+const Child: React.FC = React.memo(({name}) => (<span>name</span>));
+```
+
+当父组件引入子组件的时候，可能会造成一些不必要的子组件重复渲染浪费，例如：
+```javascript
+const Child: React.FC = (props) => {
+  console.log('子组件渲染');
+  return (<div>我是子组件</div>)
+}
+
+const Page: React.FC = (props) => {
+  const [count, setCount] = useState(0);
+  return (
+    <>
+      <button onClick={(e) => { setCount(count + 1) }}>加一</button>
+      <p>count: {count}</p>
+      <Child/>
+    </>
+  )
+}
+```
+在没有使用 `React.memo` 包裹子组件之前，每次点击"加一"的按钮，都会导致 `count` 更新， `count` 更新导致父组件重新渲染，从而也导致 `Child` 组件重新渲染。
+
+如果我们使用 `React.memo` 就能解决这个问题：
+```javascript
+const Child: React.FC = React.memo((props) => {
+  console.log('子组件渲染');
+  return (<div>我是子组件</div>)
+});
+
+const Page: React.FC = (props) => {
+  const [count, setCount] = useState(0);
+  return (
+    <>
+      <button onClick={(e) => { setCount(count + 1) }}>加一</button>
+      <p>count: {count}</p>
+      <Child/>
+    </>
+  )
+}
+
+```
+
+现在，我们的组件仅当 Props 更新时才会更新。但是这还是不够，我们还要在引用此组件的同时，确保传入的 Props 尽可能不变化。
+
+## 确保传入组件的Props不变化
+使用 `React.memo` 返回的组件，可以确保在 Props 没有变更的情况下缓存组件，但是如果父组件传递的 Props 每次都在改变的话，`React.memo` 将会失去效果。那么，我们应该确保父组件，在传递值时，尽可能保持不变。
+
+### 使用useCallback
+例如，我们传入了一个匿名函数：
+```javascript
+const Child: React.FC = React.useMemo({onClick}) => {
+  console.log('子组件');
+  return (
+    <>
+      <button onClick={onClick.bind(null, '新的子组件名称')}>改变name</button>
+    </>
+  )
+}
+
+const Page: React.FC = (props) => {
+  const [count, setCount] = useState(0);
+  const [name, setName] = useState('Child组件');
+  return (
+    <>
+      <button onClick={(e) => { setCount(count + 1) }}>加一</button>
+      <p>count: {count}</p>
+      <Child onClick={(newName: sring) => setName(newName)}/>
+    </>
+  )
+}
+
+```
+上面的例子中，我们每次改变count，都会导致父组件 `Page` 重新渲染，导致的 onClick 回调函数重新的定义，从而导致传入 Child 的 onClick函数引用改变。所以每次 Page 重新渲染都会导致 Child 重新渲染。
+
+为了解决这个问题，我们可以使用 `useCallback` 的 hook 去缓存回调函数：
+```javascript
+const Child: React.FC = React.useMemo({onClick}) => {
+  console.log('子组件');
+  return (
+    <>
+      <button onClick={onClick.bind(null, '新的子组件名称')}>改变name</button>
+    </>
+  )
+}
+
+const Page: React.FC = (props) => {
+  const [count, setCount] = useState(0);
+  const [name, setName] = useState('Child组件');
+  const handler = useCallback((newName: sring) => {
+    setName(newName);
+  }, [setName])
+  return (
+    <>
+      <button onClick={(e) => { setCount(count + 1) }}>加一</button>
+      <p>count: {count}</p>
+      <Child onClick={(newName: sring) => setName(newName)}/>
+    </>
+  )
+}
+
+```
+现在，onClick 回调函数当且仅当 setName 方法改变时进行更新。
+
+### 使用useMemo
+上面的例子中，我们介绍了传入参数为匿名函数的情况，我们可能还会传入一个临时的对象：
+```javascript
+//子组件会有不必要渲染的例子
+interface ChildProps {
+    name: { name: string; color: string };
+    onClick: Function;
+}
+const Child: React.FC = ({ name, onClick}: ChildProps) => {
+    console.log('子组件?')
+    return(
+        <>
+            <div style={{ color: name.color }}>我是一个子组件，父级传过来的数据：{name.name}</div>
+            <button onClick={onClick.bind(null, '新的子组件name')}>改变name</button>
+        </>
+    );
+}
+const ChildMemo = memo(Child);
+
+const Page: React.FC = (props) => {
+    const [count, setCount] = useState(0);
+    const [name, setName] = useState('Child组件');
+    
+    return (
+        <>
+            <button onClick={(e) => { setCount(count+1) }}>加1</button>
+            <p>count:{count}</p>
+            <ChildMemo 
+                name={{ name, color: name.indexOf('name') !== -1 ? 'red' : 'green'}} 
+                onClick={ useCallback((newName: string) => setName(newName), []) }
+            />
+        </>
+    )
+}
+
+
+```
+传入 Child name 属性的对象，在每次 Page 组件重新渲染时，都会重新创建，导致每次传入的引用不同，为了缓存一个值，我们可以使用 useMemo， useMemo 用于缓存一个执行函数的结果。
+```javascript
+//子组件会有不必要渲染的例子
+interface ChildProps {
+    name: { name: string; color: string };
+    onClick: Function;
+}
+const Child: React.FC = ({ name, onClick}: ChildProps) => {
+    console.log('子组件?')
+    return(
+        <>
+            <div style={{ color: name.color }}>我是一个子组件，父级传过来的数据：{name.name}</div>
+            <button onClick={onClick.bind(null, '新的子组件name')}>改变name</button>
+        </>
+    );
+}
+const ChildMemo = memo(Child);
+
+const Page: React.FC = (props) => {
+    const [count, setCount] = useState(0);
+    const [name, setName] = useState('Child组件');
+    const childName = useMemo(() => ({ name, color: name.indexOf('name') !== -1 ? 'red': 'green' }), [name]);
+    return (
+        <>
+            <button onClick={(e) => { setCount(count+1) }}>加1</button>
+            <p>count:{count}</p>
+            <ChildMemo 
+                name={childName} 
+                onClick={ useCallback((newName: string) => setName(newName), []) }
+            />
+        </>
+    )
+}
+
+```
+
+# 自定义Hook的实践
+自定义 Hook 是以 `use` 为前缀的函数，在自定义 hook 内可以使用任意的 hook (包括其他自定义hook)，那么自定义 hook 有什么作用呢。  
+通常来说，自定义 hook 是用来抽象逻辑，用于逻辑复用的，主要有以下好处：
+- hook 可读性高，易于维护。
+- hook 不会侵入代码，不会造成嵌套，这是mixin做不到的
+- hook 可以促使视图和逻辑拆分更明确，更易于复用。
+
+
+## 视图和逻辑拆分
+TODO: 项目中抽象逻辑的实例
