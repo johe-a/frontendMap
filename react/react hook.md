@@ -23,7 +23,7 @@
 1. 组件之间复用状态逻辑很困难
 React没有提供可复用性行为附加到组件的途径（例如把组件连接到store)。为了解决这个问题，一些库利用高阶组件,例如react-redux，返回容器组件。或者![render props](https://zh-hans.reactjs.org/docs/render-props.html),例如react-router。
 
-但是这类方案需要重新组织组件结构，这可能会让代码难以理解。并且在React DevTool中观察React应用，会发现由providers，consumers，高阶组件，render props等其他组件形成的嵌套低于。
+但是这类方案需要重新组织组件结构，这可能会让代码难以理解。并且在React DevTool中观察React应用，会发现由providers，consumers，高阶组件，render props等其他组件形成的嵌套地狱。
 
 2. 组件内部逻辑过于耦合，导致难以理解
 我们经常维护一些组件，组件起初很简单，但是逐渐会被状态逻辑和副作用充斥。每个生命周期常常包含一些不相关的逻辑。
@@ -775,4 +775,212 @@ const Page: React.FC = (props) => {
 
 
 ## 视图和逻辑拆分
-TODO: 项目中抽象逻辑的实例
+假设目前有一个需求，该需求是一个用户表格，该用户表格支持增删查改。  
+
+我们按照正常的逻辑来设计一个这样的表格：
+```javascript
+interface User {
+  id: number;
+  name: string;
+  age: number;
+}
+
+const Table: React.FC = () => {
+  // 表格所需要的state
+  const [loading, setLoading] = useState(true);
+  const [tableData, setTableData] = useState<User[]>([]);
+
+  const history = useHistory();
+
+  const handleDetailClick = useCallback(id => {
+      history.push(`xxx?id=${id}&type=query`);
+    }, [history]);
+
+  const handleEditClick = useCallback(id => {
+    history.push(`xxx?id=${id}&type=edit`);
+  }, [history]);
+
+  const columns = useMemo(() => [
+    {
+      title: 'id',
+      dataIndex: 'id',
+      key: 'id',
+      width: 79,
+    },
+    {
+      title: 'name',
+      dataIndex: 'name',
+    },
+    {
+      title: 'age',
+      dataIndex: 'age',
+    },
+    {
+      title: '操作',
+      key: 'id',
+      render: (text, record) => (
+        <Space>
+          <Button size="small" onClick={() => handleDetailClick(record.id)}>查看</Button>
+          <Button size="small" onClick={() => handleEditClick(record.id)}>编辑</Button>
+        </Space>
+      ),
+    }
+  ], []);
+
+  // 获取表格数据的方法
+  const fetchUsers = useCallback(() => {
+    setLoading(true);
+    fetch('xxx/getUsers').then((result) => {
+      setLoading(false);
+      setTableData([...result]);
+    })
+  }, []);
+
+  // 新增或保存用户
+  const saveUser = useCallback((newUser: User) => {
+    setLoading(true);
+    fetch('xxx/saveUser', { body: JSON.stringify(newUser) }).then((result) => {
+      setLoading(false);
+      this.fetchUsers();
+    })
+  }, []);
+
+  // 删除用户
+  const deleteUser = useCallback((id: User['id']) => {
+    setLoading(true);
+    fetch('xxx/deleteUser', { body: JSON.stringify({ id }) }).then((result) => {
+      setLoading(false);
+      this.fetchUsers();
+    })
+  });
+
+  return (
+    <Spin spinning={loading}>
+      <Table
+        columns={columns}
+        dataSource={tableData}
+      />
+    </Spin>
+  );
+}
+
+```
+可以看到状态、逻辑和视图都写在了组件内，包含 User 的获取、新增、删除逻辑以及 User 的列表和 User API相关的 Loading 状态。  
+
+实际上 User 相关的状态和逻辑，都可以与视图分离，视图并不关心状态如何设置和获取，它仅需要接收状态，我们可以通过自定义 Hook 来做到这一点：
+```javascript
+interface User {
+  id: number;
+  name: string;
+  age: number;
+}
+
+type Result = {
+  loading: boolean;
+  tableData: User[];
+  fetchUsers: Promise<User[]>;
+  saveUser: Promise<boolean>;
+  deleteUser: Promise<boolean>;
+}
+
+// 我们应该定义好hook会返回什么数据
+const useUser = (): Result => {
+  // 表格所需要的state
+  const [loading, setLoading] = useState(true);
+  const [tableData, setTableData] = useState<User[]>([]);
+
+   // 获取表格数据的方法
+  const fetchUsers = useCallback(() => {
+    setLoading(true);
+    fetch('xxx/getUsers').then((result) => {
+      setLoading(false);
+      setTableData([...result]);
+      return result;
+    })
+  }, []);
+
+  // 新增或保存用户
+  const saveUser = useCallback((newUser: User) => {
+    setLoading(true);
+    return fetch('xxx/saveUser', { body: JSON.stringify(newUser) }).then((result) => {
+      setLoading(false);
+      this.fetchUsers();
+      return result;
+    })
+  }, []);
+
+  // 删除用户
+  const deleteUser = useCallback((id: User['id']) => {
+    setLoading(true);
+    return fetch('xxx/deleteUser', { body: JSON.stringify({ id }) }).then((result) => {
+      setLoading(false);
+      this.fetchUsers();
+      return result;
+    })
+  }, []);
+
+  return {
+    loading,
+    tableData,
+    fetchUsers,
+    saveUser,
+    deleteUser,
+  }
+}
+
+const Table: React.FC = () => {
+  const { loading, tableData, fetchUser, saveUser, deleteUser } = useUser();
+  const history = useHistory();
+
+  const handleDetailClick = useCallback(id => {
+      history.push(`xxx?id=${id}&type=query`);
+    }, [history]);
+
+  const handleEditClick = useCallback(id => {
+    history.push(`xxx?id=${id}&type=edit`);
+  }, [history]);
+
+  const columns = useMemo(() => [
+    {
+      title: 'id',
+      dataIndex: 'id',
+      key: 'id',
+      width: 79,
+    },
+    {
+      title: 'name',
+      dataIndex: 'name',
+    },
+    {
+      title: 'age',
+      dataIndex: 'age',
+    },
+    {
+      title: '操作',
+      key: 'id',
+      render: (text, record) => (
+        <Space>
+          <Button size="small" onClick={() => handleDetailClick(record.id)}>查看</Button>
+          <Button size="small" onClick={() => handleEditClick(record.id)}>编辑</Button>
+          <Button size="small" onClick={() => deleteUser(record.id)}>
+        </Space>
+      ),
+    }
+  ], []);
+
+  useEffect(() => {
+    fetchUser();
+  }, [])
+
+  return (
+    <Spin spinning={loading}>
+      <Table
+        columns={columns}
+        dataSource={tableData}
+      />
+    </Spin>
+  );
+}
+
+```
+但与视图强相关的逻辑依然可以放在组件内，例如上面的查看和编辑，我们认为是与视图强相关并且与 User不相关的，可复用性不高的逻辑。
