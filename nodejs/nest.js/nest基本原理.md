@@ -1,8 +1,8 @@
-# 简介
+# 控制反转
 > Nest被称为Node的spring框架。Nest的核心原理之一和spring框架一样，都是IoC容器(Nest运行时系统)。
 > 依赖注入是一种控制反转(IoC)技术，我们可以将依赖的实例化委派给IoC容器，而不是在自己的代码中执行。
 
-# 什么是控制反转
+## 什么是控制反转
 在讨论控制反转之前，我们先来看看软件系统中耦合的对象。
 
 ![](https://tva1.sinaimg.cn/large/008eGmZEgy1gmzx95a2c0j309k05l74o.jpg)
@@ -140,10 +140,10 @@ providers: [
 ```
 **在这里，我们明确地将令牌CatsService与类CatsService关联起来。这也意味着我们能够改变令牌的提供者，方便我们更加灵活的改变提供者或者是测试**
 
-## 自定义提供者
+# 自定义提供者
 在上面的例子中，我们通过provide属性和useClass属性将CatsSerivce令牌与CatsService类进行绑定，这样看起来灵活性很低，例如我们有以下要求时：
 - 当我们需要自定义类的实例，而不是让Nest实例化，例如我们需要在实例时传入参数
-- 当我们想要重用现有的类实例
+- 当我们想要重用现有的类
 - 当我们需要使用不同的提供者测试时
 
 Nest可以让我们自定义提供程序来处理这些情况。包括但不限于以下几个属性
@@ -153,4 +153,72 @@ Nest可以让我们自定义提供程序来处理这些情况。包括但不限�
   
 其中useValue、useFactory提供的依赖是可以直接被用的，而类提供者，Nest会进行实例化。
 
-具体的使用请看[Nest官网](https://docs.nestjs.cn/6/fundamentals)
+标准的提供者示例：
+```javascript
+@Module({
+  controllers: [CatsController],
+  providers: [CatsService],
+})
+
+```
+providers 属性接受一个提供者数组。到目前为止，我们已经通过一个类名列表提供了这些提供者。 实际上，改语法是一种 useClass 的语法糖：
+```javascript
+providers: [
+  {
+    provider: CatsSerivce,
+    useClass: CatsService,
+  }
+]
+
+```
+在这里我们明确的将令牌 `CatsSerivce` 与类 `CatsService` 关联起来。
+
+## 字符串令牌提供者
+上面的例子中，我们的令牌都是类名。有时候，我们可能希望灵活使用字符串或者符号作为` DI(Dependence Injection) `令牌。例如：
+```javascript
+import { connection } from './connection';
+@Module({
+  providers: [
+    {
+      provide: 'CONNECTION',
+      useValue: connection,
+    }
+  ],
+})
+export class AppModule {}
+
+```
+在本例中，我们将字符串令牌 `CONNECTION` 与外部导入的 connection 进行关联。
+
+同样的，以字符串作为令牌的提供者，依然可以依靠 `依赖注入` 能力进行注入，但是我们要用的 `@Inject()`  装饰器，这个装饰器接受令牌作为参数：
+```javascript
+import { Inject, Injectable } from '@nestjs/common';
+@Injectable()
+export class CatsRepository {
+  constructor(@Inject('CONNECTION') connection: Connection) {}
+}
+
+```
+为了清晰的代码组织，最佳时间是在单独的文件中（例如 constants.ts ）中定义字符串提供者令牌。
+
+## useClass
+我们可以动态确定令牌对应解析为的类，例如假设我们现在有一个抽象(或者默认)的 `ConfigService` 类，我们希望根据当前环境，提供不同的提供者实现：
+```javascript
+import ConfigService from './config.service';
+const configServiceProvider = {
+  provider: ConfigService,
+  useClass: 
+    process.env.NODE_ENV === 'development'
+      ? DevelopmentConfigService
+      : ProductionConfigService,
+};
+
+@Module({
+  providers: [configServiceProvider],
+})
+export class AppModule{}
+```
+我们使用 ConfigService 类名称作为令牌。 对于任何依赖 ConfigService 的类，Nest 都会注入提供的类的实例 `DevelopmentConfigService` 或 `ProductionConfigService`
+
+
+## useFactory
