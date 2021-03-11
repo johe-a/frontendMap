@@ -1,3 +1,33 @@
+- [控制反转](#控制反转)
+  - [什么是控制反转](#什么是控制反转)
+- [依赖注入](#依赖注入)
+  - [什么是依赖](#什么是依赖)
+  - [什么是依赖注入](#什么是依赖注入)
+- [Nest中的依赖注入](#nest中的依赖注入)
+- [自定义提供者](#自定义提供者)
+  - [字符串令牌提供者](#字符串令牌提供者)
+  - [useClass](#useclass)
+  - [useFactory](#usefactory)
+  - [导出自定义提供者](#导出自定义提供者)
+  - [提供者注入](#提供者注入)
+- [动态模块](#动态模块)
+  - [静态模块的绑定](#静态模块的绑定)
+  - [动态模块定义](#动态模块定义)
+  - [配置模块实例](#配置模块实例)
+  - [可配置模块的实现](#可配置模块的实现)
+- [作用域](#作用域)
+  - [提供者作用域](#提供者作用域)
+  - [控制器作用域](#控制器作用域)
+  - [作用域制度](#作用域制度)
+  - [获取原始请求对象(REQUEST)](#获取原始请求对象request)
+- [模块的引用](#模块的引用)
+  - [获取实例(控制器、提供者、任何可注入类)](#获取实例控制器提供者任何可注入类)
+  - [获取具有作用域的实例](#获取具有作用域的实例)
+  - [动态创建实例(用于未注册的提供者)](#动态创建实例用于未注册的提供者)
+- [生命周期事件](#生命周期事件)
+  - [生命周期](#生命周期)
+  - [生命周期使用](#生命周期使用)
+    - [异步的初始化](#异步的初始化)
 # 控制反转
 > Nest被称为Node的spring框架。Nest的核心原理之一和spring框架一样，都是IoC容器(Nest运行时系统)。
 > 依赖注入是一种控制反转(IoC)技术，我们可以将依赖的实例化委派给IoC容器，而不是在自己的代码中执行。
@@ -478,4 +508,237 @@ export class ConfigService {
 ```javascript
 // ./constants.ts
 const CONFIG_OPTIONS = 'CONFIG_OPTIONS';
+```
+
+# 作用域
+## 提供者作用域
+一个提供者可能会有以下几种类型的作用域：
+| 类型 | 作用域 |
+|---|---|
+| DEFAULT | 一个单例的提供者将会被整个应用共享，提供者实例的生命周期与应用声明周期直接绑定，当应用被启动的时候，所有的单例提供者将会被初始化，单例模式是默认的作用域。 |
+| REQUEST | 每一个请求就会有一个新的实例，这个实例将会被垃圾回收机制回收，当一个请求完成了它的处理过程 |
+| TRANSIENT | 临时(Transient)提供者将不会被消费者分享，每一个消费者对其进行注入时，都是一个新的实例 |
+
+> 提示： 使用单例作用域是被官方推荐的，在不同的消费者和请求之间共享实例，意味着实例可以被缓存，并且在应用启动的过程中，初始化过程只会发生一次。
+
+我们可以通过传递 `scope` 属性给 `@Injectable()` 装饰器来设置提供者的作用域。
+
+```javascript
+import { Injectable, Scope } from '@nestjs/common';
+
+@Injectable({ scope: Scope.REQUEST })
+export class CatsService {}
+
+```
+
+同样的，对于自定义提供者，通过 `scope` 属性来设置：
+```javascript
+{
+  provide: 'CACHE_MANAGER',
+  useClass: CacheManager,
+  scope: Scope.TRANSIENT,
+}
+
+```
+
+## 控制器作用域
+控制器也拥有作用域，它将会被应用于控制器的请求处理范围。和提供者类似，控制器的作用域声明了它的生命周期。对于一个 `request-scoped` (请求范围) 的控制器，每一个请求都会创建一个新的控制器实例，并且在请求处理完毕之后会被垃圾回收机制回收。
+
+```javascript
+@Controller({
+  path: 'cats',
+  scope: Scope.REQUEST,
+})
+export class CatsController {}
+```
+
+## 作用域制度
+作用域将会在注入链中冒泡。如果一个控制器依赖了一个请求范围(`request-scoped`)的作用域的提供者，它也将变成请求范围的控制器。
+
+假设我们有以下依赖图：  
+`CatsController <- CatsService <- CatsRepository`，如果 `CatsService` 是一个 `请求范围` 作用域的提供者(其他默认是单例)，那么 `CatsController` 将会变成 `请求范围` 作用域的控制器，因为它依赖于它注入的服务，而 `CatsRepository` 没有依赖任何人，所以它将保持单例模式。
+
+## 获取原始请求对象(REQUEST)
+在一个 HTTP 应用下，我们可能会需要获取原始的请求对象引用，当我们在使用 `请求作用域的` 提供者时。我们可以通过注入 `REQUEST` 令牌来获取：
+```javascript
+import { Injectable, Scope, Inject } from '@nestjs/common';
+import { REQUEST } from '@nestjs/core';
+import { Request } from 'express';
+
+@Injectable({ scope: Scope.REQUEST })
+export class CatsService {
+  constructor(@Inject(REQUEST) private request: Request) {}
+}
+
+```
+在不同的系统或者协议下，获取请求对象的方式可能不同，例如在 `GraphQL` 应用下，我们需要注入 `CONTEXT` 令牌而不是 `REQEUST`:
+```javascript
+import { Injectable, Scope, Inject } from '@nestjs/common';
+import { CONTEXT } from '@nestjs/graphql';
+
+@Injectable({ scope: Scope.REQUEST })
+export class CatsService {
+  constructor(@Inject(CONTEXT) private context) {}
+}
+
+```
+
+# 模块的引用
+Nest 提供 `ModuleRef` 类，该类可以获取内部(`internal`)的提供者或者任何以注入令牌(`token`)作为查询(`lookup`)key的提供者。`ModuleRef` 类还提供方法去动态的初始化静态的和作用域范围的提供者。
+
+```javascript
+import { ModuleRef } from '@nestjs/core';
+@Injetable()
+export class CatsService {
+  constructor(private moduleRef: ModuleRef)
+}
+
+```
+
+## 获取实例(控制器、提供者、任何可注入类)
+`ModuleRef` 实例拥有一个 `get()` 方法，该方法可以用于获取 `提供者` 、 `控制器` 、 `可注入类(例如守卫、拦截器、管道等)`，只要它们这些可注入类使用 token 或者 class 名称作为注入的令牌。
+
+```javascript
+@Injectable()
+export class CatsService implements OnModuleInit {
+  private service: Service;
+  constructor(private moduleRef: ModuleRef) {}
+
+  onModuleInit() {
+    this.service = this.moduleRef.get(Service);
+  }
+}
+
+```
+
+> `get()` 方法不能用于获取具有 `作用域范围` 的提供者
+
+如果需要获取一个全局的提供者(例如这个提供者被注入到不同的模块时)，我们可以将 `{ strict: false }` 作为第二个参数传递给 `get()` 方法。
+
+```javascript
+this.moduleRef.get(Service, { strict: false });
+
+```
+
+## 获取具有作用域的实例
+如果需要动态的获取一个具有作用域范围的提供者(transient or request-scoped)，使用`resolve()`方法，传递`token`作为参数：
+```javascript
+@Injectable()
+export class CatsService implements OnModuleInit {
+  private transientService: TransientSerice;
+  constructor(private moduleRef: ModuleRef) {}
+
+  async onModuleInit() {
+    this.transientSerivce = await this.moduleRef.resolve(TransientService);
+  }
+}
+
+
+```
+`resolve()` 方法每次返回一个单独的新实例，从它的 `依赖注入容器` (DI Container)子树。每一个子树都拥有一个单独的 `上下文标识` (context identifier)。
+
+```javascript
+@Injectable()
+export class CatsService implements OnModuleInit {
+  constructor(private moduleRef: ModuleRef) {}
+
+  async onModuleInit() {
+    const transientServices = await Promise.all([
+      this.moduleRef.resolve(TransientService),
+      this.moduleRef.resolve(TransientService),
+    ]);
+    // false
+    console.log(transientServices[0] === transientServices[1]);
+  }
+}
+
+```
+如果希望在多次 `resolve()` 方法中返回同一个实例，需要确认它们具有同样的 `依赖注入容器子树` (DI container sub-tree)，然后传递这个 `上下文标识`(context indetifier)给 `resolve()` 方法。我们可以使用 `ContextIdFactory` 类来创建一个 `上下文标识`。该类提供一个 `create()` 方法去创建一个单独的标识。
+
+```javascript
+import { ContextIdFactory } from '@nestjs/core';
+@Injectable()
+export class CatsService implements OnModuleInit {
+  constructor(private moduleRef: ModuleRef) {}
+
+  async onModuleInit() {
+    const contextId = ContextIdFactory.create();
+    const transientServices = await Promise.all([
+      this.moduleRef.resolve(TransientService, contextId),
+      this.moduleRef.resolve(TransientService, contextId),
+    ]);
+    console.log(transientServices[0] === transientServices[1]);
+  }
+}
+
+```
+
+## 动态创建实例(用于未注册的提供者)
+如果我们需要动态的创建一个类的实例，并且该类并没有注册为提供者，我们可以使用 `create()` 方法：
+```javascript
+@Injectable()
+export class CatsService implements OnModuleInit {
+  private catsFactory: CatsFactory;
+  constructor(private moduleRef: ModuleRef) {}
+
+  async onModuleInit() {
+    this.catsFactory = await this.moduleRef.create(CatsFactory);
+  }
+}
+
+```
+
+# 生命周期事件
+Nest 应用拥有生命周期。Nest 提供`生命周期事件`(hooks)使得关键的生命周期可见和可执行(执行注册代码在模块、提供者、控制器上)
+
+## 生命周期
+下面的图片描述了关键的生命周期事件顺序，从应用启动开始到 node 进程结束。  
+
+我们可以将整个**生命周期给分解为三个阶段**： `初始化`(initializing)、`运行时`(running)、`结束`(terminating)。  
+
+通过生命周期的事件，我们可以在适当的时机进行 `模块` 或者 `服务` 的初始化，管理连接(`active connection`)，并且优雅的关闭应用，当应用受到结束信号的时候。
+
+![](https://tva1.sinaimg.cn/large/008eGmZEgy1gofyc8dzwmj30qy0msgob.jpg)
+
+Nest 会在每一个生命周期事件上，调用在 `模块(modules)`、 `提供者(injectables)`、 `控制器(controllers)`上注册的生命周期方法。就像上面的图标展示的，Nest 会在适当的时机调用生命周期方法去监听连接、在适当的时机去停止监听。
+
+在下面的表格中，`onModuleDestroy`、`beforeApplicationShutdown`、`onApplicationShutdown`仅仅会在你调用 `app.close()`或者进程接收到终止信号的时候被触发。
+
+| 事件 | 调用时机 |
+|---|---|
+| `onModuleInit()` | 调用一次，当主机模块的所有依赖的`onModuleInit`调用之后 |
+| `onApplicationBootstrap()` | 调用一次，当所有的模块都被初始化时，但是在监听连接之前 |
+| `onModuleDestroy` | 在接收到结束信号的时候调用 |
+| `beforeApplicationShutdown()` | 在 `onModuleDestroy()` 事件处理完毕之后调用(Promise被resolved或者rejected)，一旦处理完毕，所有存在的连接都会被关闭(调用 app.close()) |
+| `onApplicationShutdown()` | 当所有连接都被关闭之后调用 (app.close() resolves) |
+
+>? 以上的生命周期事件并不会在 `具有作用域(request-scoped)` 的类上，因为它们的生命周期是不可预测的。它们由每一个请求创建，当请求处理完毕又自动的被垃圾回收机制回收。
+
+## 生命周期使用
+每一个生命周期的 hook 都有对应接口进行约束。接口在技术上是完全可选的，因为它们在TS被编译之后会消失。
+
+但是，最佳实践是使用接口，因为它在强类型和编辑器提示上有益。
+
+例如，以下的服务通过接口约束，并且实现声明周期的 `OnModuleInit hook`:
+
+```javascript
+import { Injectable, OnModuleInit } from '@nestjs/common';
+
+@Injectable()
+export class UsersService implements OnModuleInit {
+  onModuleInit() {
+    console.log(`The module has been initialied`);
+  }
+}
+
+```
+
+### 异步的初始化
+`OnModuleInit` 和 `OnApplicationBootstrap` hooks 都接受延迟初始化应用的过程。
+
+```javascript 
+async onModuleInit(): Promise<void> {
+  await this.fetch();
+}
+
 ```
