@@ -103,7 +103,7 @@ rebase过程：
 
 # 撤销
 
-## 撤销工作区
+## 撤销暂存区
 撤销经过git add操作后的文件
 ```shell
 git checkout --
@@ -147,3 +147,63 @@ b82980a HEAD@{4}: commit: test撤销
 ```shell
 git reset --hard 61506be
 ```
+
+## 撤销某一次commit
+`git reset`用于回退到某一次commit上，例如现在的commit历史是这样的：
+```shell
+A<-B<-C
+```
+我们想要回滚到A的commit上，通过`git reset`会导致`B`和`C`的改动消失，并且`commit`历史也会被删除。
+
+在我们发现线上问题的时候，可能是`B`的`commit`导致的，这个时候我们并不想`C`的`commit`由于回退被删除。也就是说我们只想撤销`B`的修改，并且不影响`A`和`C`。这个时候我们就会用到`git revert`。
+
+`git revert`用于撤销某个`commit`的改动，当我们`git revert`到`B`时，将会把`B`的所有改动撤销。
+
+# git cherry-pick获取其他分支的commit
+对于多分支的代码库，将代码从一个分支转移到另一个分支是常见需求。
+
+这时分两种情况。一种情况是，你需要另一个分支的所有代码变动，那么就采用合并（git merge）。另一种情况是，你只需要部分代码变动（某几个提交），这时可以采用 Cherry pick。
+```shell
+git cherry-pick <commitHash>
+```
+> 上面命令就会将指定的提交commitHash，应用于当前分支。这会在当前分支产生一个新的提交，当然它们的哈希值会不一样。
+
+举例来说，代码仓库有master和feature两个分支。
+
+```shell
+ a - b - c - d   Master
+         \
+           e - f - g Feature
+```
+现在将提交f应用到master分支。
+
+```shell
+
+# 切换到 master 分支
+$ git checkout master
+
+# Cherry pick 操作
+$ git cherry-pick f
+```
+
+上面的操作完成以后，代码库就变成了下面的样子。
+
+```shell
+
+    a - b - c - d - f   Master
+         \
+           e - f - g Feature
+```
+
+## cherry-pick多个提交
+如果想要转移一系列的连续提交，可以使用下面的简便语法。
+```shell
+$ git cherry-pick A..B 
+
+```
+上面的命令可以转移从 A（不包含A） 到 B 的所有提交。它们必须按照正确的顺序放置：提交 A 必须早于提交 B，否则命令将失败，但不会报错。
+
+## cherry-pick冲突
+如果操作过程中发生代码冲突，解决方式和rebase时一致，先将修改后的代码add到暂存区之后，使用`git cherry-pick --continue`。
+
+如果这个时候想要撤销cherry-pick，可以使用`git cherry-pick --abort`
