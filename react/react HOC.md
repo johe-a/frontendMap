@@ -1,3 +1,6 @@
+- [前言](#前言)
+- [HOC解决的问题](#hoc解决的问题)
+- [HOC设计原则](#hoc设计原则)
 # 前言
 高阶组件（High-Order Component）是React中用于复用组件逻辑的一种高级技巧。HOC自身不是React API的一部分，是一种基于React组合特性而形成的设计模式。
 

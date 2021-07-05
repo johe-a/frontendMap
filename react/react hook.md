@@ -1,8 +1,29 @@
+- [为什么要用hook](#为什么要用hook)
+- [State Hook](#state-hook)
+  - [惰性初始state](#惰性初始state)
+- [Effect Hook](#effect-hook)
+  - [无需清除的effect](#无需清除的effect)
+    - [使用class的例子](#使用class的例子)
+    - [使用hook的例子](#使用hook的例子)
+  - [需要清除的effect](#需要清除的effect)
+  - [按需调用Effect](#按需调用effect)
+- [useRef](#useref)
+- [useCallback](#usecallback)
+  - [使用useCallack的前后分析](#使用usecallack的前后分析)
+  - [useCallback源码](#usecallback源码)
+- [useMemo](#usememo)
+- [缓存一个组件](#缓存一个组件)
+  - [React.memo(通过对比函数决定组件更新)](#reactmemo通过对比函数决定组件更新)
+  - [确保传入组件的Props不变化](#确保传入组件的props不变化)
+    - [使用useCallback](#使用usecallback)
+    - [使用useMemo](#使用usememo)
+- [自定义Hook的实践](#自定义hook的实践)
+  - [视图和逻辑拆分](#视图和逻辑拆分)
 # 为什么要用hook
 1. 组件之间复用状态逻辑很困难
 React没有提供可复用性行为附加到组件的途径（例如把组件连接到store)。为了解决这个问题，一些库利用高阶组件,例如react-redux，返回容器组件。或者![render props](https://zh-hans.reactjs.org/docs/render-props.html),例如react-router。
 
-但是这类方案需要重新组织组件结构，这可能会让代码难以理解。并且在React DevTool中观察React应用，会发现由providers，consumers，高阶组件，render props等其他组件形成的嵌套低于。
+但是这类方案需要重新组织组件结构，这可能会让代码难以理解。并且在React DevTool中观察React应用，会发现由providers，consumers，高阶组件，render props等其他组件形成的嵌套地狱。
 
 2. 组件内部逻辑过于耦合，导致难以理解
 我们经常维护一些组件，组件起初很简单，但是逐渐会被状态逻辑和副作用充斥。每个生命周期常常包含一些不相关的逻辑。
@@ -283,8 +304,683 @@ useEffect(() => {
 
 虽然 useEffect 会在浏览器绘制后延迟执行，但会保证在任何新的渲染前执行。React 将在组件更新前刷新上一轮渲染的 effect。
 
+# useRef
+
+
+
 
 # useCallback
+语法:
+```javascript
+const memorizedCallback = useCallback(
+  function cb(){
+    doSomething(a, b);
+  }, 
+  [a, b]
+);
+
+```
+在a和b不变的情况下，memorizedCallback的引用不变（指向cb），即useCallback的第一个入参函数会被缓存，从而达到渲染性能优化的目的。
+
+## 使用useCallack的前后分析
+从一个简单示例分析：
+```javascript
+// 在Hooks中获取上一次指定的props
+const usePrevProps = value => {
+  console.log('执行usePrevProps');
+  const ref = React.useRef();
+  React.useEffect(() => {
+    console.log('执行useEffect');
+    ref.current = value;
+  });
+  return ref.current;
+}
+
+function App() {
+  const [count, setCount] = React.useState(0);
+  const [total, setTotal] = React.useState(0);
+  const handleCount = () => setCount(count + 1);
+  const handleTotal = () => setTotal(total + 1);
+  // 自定义hook来存储上一次的handleCount函数
+  const prevHandleCount = usePrevProps(handleCount);
+  
+  console.log('两次处理函数是否相等：', prevHandleCount === handleCount);
+  
+  return (
+    <div>
+      <div>Count is {count}</div>
+       <div>Total is {total}</div>
+      <br/>
+      <div>
+        <button onClick={handleCount}>Increment Count</button>
+        <button onClick={handleTotal}>Increment Total</button>
+      </div>
+    </div>
+  )
+}
+
+ReactDOM.render(<App />, document.body);
+
+/**
+ *  首次执行：
+ *  执行usePreProps
+ *  两次处理函数是否相等: false
+ *  执行useEffect（由于闭包的关系，缓存了上一个handleCount）
+ *  点击后第一次重新渲染：
+ *  执行usePreProps
+ *  两次处理函数是否相等: false（由于handleCount被重复创建了）
+ *  执行useEffect
+ * /
+
+```
+上述例子在点击按钮时，会导致App组件重新渲染，每一次渲染时都会执行函数体，函数体内的handleCount被重复的创建，所以会一直输出false。
+
+> 注意：usePrevProps内部使用了useRef和useRef(), 虽然usePrevProps、useRef是同步调用的，但是useEeffect是在组件渲染完毕后调用的，所以会延迟执行。
 
 
-# useRef
+为了能够缓存handleCount，我们可以使用useCallback:
+```javascript
+// 在Hooks中获取上一次指定的props
+const usePrevProps = value => {
+  console.log('执行usePrevProps');
+  const ref = React.useRef();
+  React.useEffect(() => {
+    console.log('执行useEffect');
+    ref.current = value;
+  });
+  return ref.current;
+}
+
+function App() {
+  const [count, setCount] = React.useState(0);
+  const [total, setTotal] = React.useState(0);
+  const handleCount = React.useCallback(() => setCount(count + 1), []);
+  const handleTotal = () => setTotal(total + 1);
+  // 自定义hook来存储上一次的handleCount函数
+  const prevHandleCount = usePrevProps(handleCount);
+  
+  console.log('两次处理函数是否相等：', prevHandleCount === handleCount);
+  
+  return (
+    <div>
+      <div>Count is {count}</div>
+       <div>Total is {total}</div>
+      <br/>
+      <div>
+        <button onClick={handleCount}>Increment Count</button>
+        <button onClick={handleTotal}>Increment Total</button>
+      </div>
+    </div>
+  )
+}
+
+ReactDOM.render(<App />, document.body);
+
+/**
+ *  首次执行：
+ *  执行usePreProps
+ *  两次处理函数是否相等: false （此时ref.current还是个空值）
+ *  执行useEffect（由于闭包的关系，缓存了上一个handleCount）
+ *  点击后第一次重新渲染：
+ *  执行usePreProps
+ *  两次处理函数是否相等: true (useCallback缓存了handleCount)
+ *  执行useEffect
+ * /
+```
+> **传递给useCallback的第二个参数，代表它的依赖项，一旦依赖项没有改变，则传递给useCallback的第一个参数会被缓存。通过传入空数组，则每次依赖数组都不会被改变，得到永久缓存的效果。**
+> 为什么要缓存函数？将handleCount传递给经过优化的组件时，由于handleCount一直在改变，会导致经过优化的组件(只要props相同，就不会重新渲染，例如通过React.memo、shouldComponentUpdate判断和pureComponent创建的组件)依然重复渲染。
+
+如下所示：
+```javascript
+// 在Hooks中获取上一次指定的props
+const usePrevProps = value => {
+  console.log('执行usePrevProps');
+  const ref = React.useRef();
+  React.useEffect(() => {
+    console.log('执行useEffect');
+    ref.current = value;
+  });
+  return ref.current;
+}
+
+function App() {
+  const [count, setCount] = React.useState(0);
+  const [total, setTotal] = React.useState(0);
+  const handleCount = () => setCount(count + 1);
+  const handleTotal = () => setTotal(total + 1);
+  // 自定义hook来存储上一次的handleCount函数
+  const prevHandleCount = usePrevProps(handleCount);
+  
+  console.log('两次处理函数是否相等：', prevHandleCount === handleCount);
+  
+  return (
+    <div>
+      <div>Count is {count}</div>
+       <div>Total is {total}</div>
+      <br/>
+      <div>
+        <button onClick={handleCount}>Increment Count</button>
+        <button onClick={handleTotal}>Increment Total</button>
+        <CachedChildComponent click={handleCount} />
+      </div>
+    </div>
+  )
+}
+
+const CachedChildComponent = React.memo(function ChildComponent({click}) {
+  console.log('Child Component Render');
+  return (
+    <button onClick={click}>Child Click</button>
+  )
+})
+
+ReactDOM.render(<App />, document.body);
+
+/**
+ *  首次执行：
+ *  执行usePreProps
+ *  两次处理函数是否相等: false （此时ref.current还是个空值）
+ *  Child Component Render
+ *  执行useEffect（由于闭包的关系，缓存了上一个handleCount）
+ *  点击后第一次重新渲染：
+ *  执行usePreProps
+ *  两次处理函数是否相等: false 
+ *  Child Component Render
+ *  执行useEffect
+ * /
+```
+CachedChildComponent在React.memo的控制下，只要传递给它的props不改变，它就不会重复渲染。但是handleCount的引用在每次渲染中都会改变，导致传递给CachedChildComponent的props中的click属性也一直在改变。达不到缓存的效果。
+
+如果使用useCallback就能很好的解决这个问题。
+
+## useCallback源码
+```javascript
+function updateCallback(callback, deps) {
+  const hook = updateWorkInProgressHook();
+  const nextDeps = deps === undefined ? null : deps;
+  const prevState = hook.memoizedState;
+  if (prevState !== null) {
+    if (nextDeps !== null) {
+      const prevDeps = prevState[1];
+      if (areHookInputsEqual(nextDeps, prevDeps)) {
+        return prevState[0];
+      }
+    }
+  }
+  // 初始化缓存，第一次执行或者不存在依赖数组的情况下
+  hook.memoizedState = [callback, nextDeps];
+  return callback;
+}
+```
+
+# useMemo
+useMemo和useCallback几乎是一致的，他们的唯一区别：
+- useCallback根据依赖，缓存第一个入参。
+- useMemo根据依赖，缓存第一个入参执行后的值。
+
+useMemo源码：
+```javascript
+function updateMemo(nextCreate, deps) {
+  const hook = updateWorkInProgressHook();
+  const nextDeps = deps === undefined ? null : deps;
+  const prevState = hook.memoizedState;
+  if (prevState !== null) {
+    if (nextDeps !== null) {
+      const prevDeps = prevState[1];
+      if (areHookInputsEqual(nextDeps, prevDeps)) {
+        return prevState[0];
+      }
+    }
+  }
+  const nextValue = nextCreate(); 
+  hook.memoizedState = [nextValue, nextDeps];
+  return nextValue;
+};
+```
+
+useMemo一般用于密集型计算大的一些缓存。
+例如：
+```javascript
+// 在Hooks中获取上一次指定的props
+const usePrevProps = value => {
+  const ref = React.useRef();
+  React.useEffect(() => {
+    ref.current = value;
+  });
+  return ref.current;
+}
+
+function App() {
+  const [count, setCount] = React.useState(0);
+  const [total, setTotal] = React.useState(0);
+  const calcValue = React.useMemo(() => {
+    return Array(100000).fill('').map(v => /*一些大量计算*/ v);
+  }, [count]);
+  const handleCount = () => setCount(count => count + 1);
+  const handleTotal = () => setTotal(total + 1);
+  const prevCalcValue = usePrevProps(calcValue);
+  
+  console.log('两次计算结果是否相等：', prevCalcValue === calcValue);
+  return (
+    <div>
+      <div>Count is {count}</div>
+       <div>Total is {total}</div>
+      <br/>
+      <div>
+        <button onClick={handleCount}>Increment Count</button>
+        <button onClick={handleTotal}>Increment Total</button>
+      </div>
+    </div>
+  )
+}
+
+ReactDOM.render(<App />, document.body)
+
+
+```
+
+# 缓存一个组件
+在 class 组件中，我们通过 `ShouldComponentUpdate` 的生命周期来对组件进行缓存。在函数式组件中我们应该用什么方法来确保一个组件可缓存？  
+先抛出结论，我们应该要确保以下两点：
+1. 传入的 Props 没有改变的情况下，不重新渲染。
+2. 减少不必要的 Props 变化。
+
+## React.memo(通过对比函数决定组件更新)
+首先认识 React 提供的高阶组件： `React.memo`，默认情况下，通过 `React.memo` 包裹的组件，会返回一个新的组件，该组件只在 Props 变化时进行更新(浅层比较)， 我们也可以通过 `React.memo` 提供的第二个参数来定义 `React.memo` 返回的组件是否更新(例如进行深层比较)。与 `ShouldComponentUpdate` 不同的是， `React.memo` 在比较函数返回 true 时不会更新， 返回 false 时更新，这一点和 `ShouldComponentUpdate` 相反。
+
+```javascript
+const Child: React.FC = React.memo(({name}) => (<span>name</span>));
+```
+
+当父组件引入子组件的时候，可能会造成一些不必要的子组件重复渲染浪费，例如：
+```javascript
+const Child: React.FC = (props) => {
+  console.log('子组件渲染');
+  return (<div>我是子组件</div>)
+}
+
+const Page: React.FC = (props) => {
+  const [count, setCount] = useState(0);
+  return (
+    <>
+      <button onClick={(e) => { setCount(count + 1) }}>加一</button>
+      <p>count: {count}</p>
+      <Child/>
+    </>
+  )
+}
+```
+在没有使用 `React.memo` 包裹子组件之前，每次点击"加一"的按钮，都会导致 `count` 更新， `count` 更新导致父组件重新渲染，从而也导致 `Child` 组件重新渲染。
+
+如果我们使用 `React.memo` 就能解决这个问题：
+```javascript
+const Child: React.FC = React.memo((props) => {
+  console.log('子组件渲染');
+  return (<div>我是子组件</div>)
+});
+
+const Page: React.FC = (props) => {
+  const [count, setCount] = useState(0);
+  return (
+    <>
+      <button onClick={(e) => { setCount(count + 1) }}>加一</button>
+      <p>count: {count}</p>
+      <Child/>
+    </>
+  )
+}
+
+```
+
+现在，我们的组件仅当 Props 更新时才会更新。但是这还是不够，我们还要在引用此组件的同时，确保传入的 Props 尽可能不变化。
+
+## 确保传入组件的Props不变化
+使用 `React.memo` 返回的组件，可以确保在 Props 没有变更的情况下缓存组件，但是如果父组件传递的 Props 每次都在改变的话，`React.memo` 将会失去效果。那么，我们应该确保父组件，在传递值时，尽可能保持不变。
+
+### 使用useCallback
+例如，我们传入了一个匿名函数：
+```javascript
+const Child: React.FC = React.useMemo({onClick}) => {
+  console.log('子组件');
+  return (
+    <>
+      <button onClick={onClick.bind(null, '新的子组件名称')}>改变name</button>
+    </>
+  )
+}
+
+const Page: React.FC = (props) => {
+  const [count, setCount] = useState(0);
+  const [name, setName] = useState('Child组件');
+  return (
+    <>
+      <button onClick={(e) => { setCount(count + 1) }}>加一</button>
+      <p>count: {count}</p>
+      <Child onClick={(newName: sring) => setName(newName)}/>
+    </>
+  )
+}
+
+```
+上面的例子中，我们每次改变count，都会导致父组件 `Page` 重新渲染，导致的 onClick 回调函数重新的定义，从而导致传入 Child 的 onClick函数引用改变。所以每次 Page 重新渲染都会导致 Child 重新渲染。
+
+为了解决这个问题，我们可以使用 `useCallback` 的 hook 去缓存回调函数：
+```javascript
+const Child: React.FC = React.useMemo({onClick}) => {
+  console.log('子组件');
+  return (
+    <>
+      <button onClick={onClick.bind(null, '新的子组件名称')}>改变name</button>
+    </>
+  )
+}
+
+const Page: React.FC = (props) => {
+  const [count, setCount] = useState(0);
+  const [name, setName] = useState('Child组件');
+  const handler = useCallback((newName: sring) => {
+    setName(newName);
+  }, [setName])
+  return (
+    <>
+      <button onClick={(e) => { setCount(count + 1) }}>加一</button>
+      <p>count: {count}</p>
+      <Child onClick={(newName: sring) => setName(newName)}/>
+    </>
+  )
+}
+
+```
+现在，onClick 回调函数当且仅当 setName 方法改变时进行更新。
+
+### 使用useMemo
+上面的例子中，我们介绍了传入参数为匿名函数的情况，我们可能还会传入一个临时的对象：
+```javascript
+//子组件会有不必要渲染的例子
+interface ChildProps {
+    name: { name: string; color: string };
+    onClick: Function;
+}
+const Child: React.FC = ({ name, onClick}: ChildProps) => {
+    console.log('子组件?')
+    return(
+        <>
+            <div style={{ color: name.color }}>我是一个子组件，父级传过来的数据：{name.name}</div>
+            <button onClick={onClick.bind(null, '新的子组件name')}>改变name</button>
+        </>
+    );
+}
+const ChildMemo = memo(Child);
+
+const Page: React.FC = (props) => {
+    const [count, setCount] = useState(0);
+    const [name, setName] = useState('Child组件');
+    
+    return (
+        <>
+            <button onClick={(e) => { setCount(count+1) }}>加1</button>
+            <p>count:{count}</p>
+            <ChildMemo 
+                name={{ name, color: name.indexOf('name') !== -1 ? 'red' : 'green'}} 
+                onClick={ useCallback((newName: string) => setName(newName), []) }
+            />
+        </>
+    )
+}
+
+
+```
+传入 Child name 属性的对象，在每次 Page 组件重新渲染时，都会重新创建，导致每次传入的引用不同，为了缓存一个值，我们可以使用 useMemo， useMemo 用于缓存一个执行函数的结果。
+```javascript
+//子组件会有不必要渲染的例子
+interface ChildProps {
+    name: { name: string; color: string };
+    onClick: Function;
+}
+const Child: React.FC = ({ name, onClick}: ChildProps) => {
+    console.log('子组件?')
+    return(
+        <>
+            <div style={{ color: name.color }}>我是一个子组件，父级传过来的数据：{name.name}</div>
+            <button onClick={onClick.bind(null, '新的子组件name')}>改变name</button>
+        </>
+    );
+}
+const ChildMemo = memo(Child);
+
+const Page: React.FC = (props) => {
+    const [count, setCount] = useState(0);
+    const [name, setName] = useState('Child组件');
+    const childName = useMemo(() => ({ name, color: name.indexOf('name') !== -1 ? 'red': 'green' }), [name]);
+    return (
+        <>
+            <button onClick={(e) => { setCount(count+1) }}>加1</button>
+            <p>count:{count}</p>
+            <ChildMemo 
+                name={childName} 
+                onClick={ useCallback((newName: string) => setName(newName), []) }
+            />
+        </>
+    )
+}
+
+```
+
+# 自定义Hook的实践
+自定义 Hook 是以 `use` 为前缀的函数，在自定义 hook 内可以使用任意的 hook (包括其他自定义hook)，那么自定义 hook 有什么作用呢。  
+通常来说，自定义 hook 是用来抽象逻辑，用于逻辑复用的，主要有以下好处：
+- hook 可读性高，易于维护。
+- hook 不会侵入代码，不会造成嵌套，这是mixin做不到的
+- hook 可以促使视图和逻辑拆分更明确，更易于复用。
+
+
+## 视图和逻辑拆分
+假设目前有一个需求，该需求是一个用户表格，该用户表格支持增删查改。  
+
+我们按照正常的逻辑来设计一个这样的表格：
+```javascript
+interface User {
+  id: number;
+  name: string;
+  age: number;
+}
+
+const Table: React.FC = () => {
+  // 表格所需要的state
+  const [loading, setLoading] = useState(true);
+  const [tableData, setTableData] = useState<User[]>([]);
+
+  const history = useHistory();
+
+  const handleDetailClick = useCallback(id => {
+      history.push(`xxx?id=${id}&type=query`);
+    }, [history]);
+
+  const handleEditClick = useCallback(id => {
+    history.push(`xxx?id=${id}&type=edit`);
+  }, [history]);
+
+  const columns = useMemo(() => [
+    {
+      title: 'id',
+      dataIndex: 'id',
+      key: 'id',
+      width: 79,
+    },
+    {
+      title: 'name',
+      dataIndex: 'name',
+    },
+    {
+      title: 'age',
+      dataIndex: 'age',
+    },
+    {
+      title: '操作',
+      key: 'id',
+      render: (text, record) => (
+        <Space>
+          <Button size="small" onClick={() => handleDetailClick(record.id)}>查看</Button>
+          <Button size="small" onClick={() => handleEditClick(record.id)}>编辑</Button>
+        </Space>
+      ),
+    }
+  ], []);
+
+  // 获取表格数据的方法
+  const fetchUsers = useCallback(() => {
+    setLoading(true);
+    fetch('xxx/getUsers').then((result) => {
+      setLoading(false);
+      setTableData([...result]);
+    })
+  }, []);
+
+  // 新增或保存用户
+  const saveUser = useCallback((newUser: User) => {
+    setLoading(true);
+    fetch('xxx/saveUser', { body: JSON.stringify(newUser) }).then((result) => {
+      setLoading(false);
+      this.fetchUsers();
+    })
+  }, []);
+
+  // 删除用户
+  const deleteUser = useCallback((id: User['id']) => {
+    setLoading(true);
+    fetch('xxx/deleteUser', { body: JSON.stringify({ id }) }).then((result) => {
+      setLoading(false);
+      this.fetchUsers();
+    })
+  });
+
+  return (
+    <Spin spinning={loading}>
+      <Table
+        columns={columns}
+        dataSource={tableData}
+      />
+    </Spin>
+  );
+}
+
+```
+可以看到状态、逻辑和视图都写在了组件内，包含 User 的获取、新增、删除逻辑以及 User 的列表和 User API相关的 Loading 状态。  
+
+实际上 User 相关的状态和逻辑，都可以与视图分离，视图并不关心状态如何设置和获取，它仅需要接收状态，我们可以通过自定义 Hook 来做到这一点：
+```javascript
+interface User {
+  id: number;
+  name: string;
+  age: number;
+}
+
+type Result = {
+  loading: boolean;
+  tableData: User[];
+  fetchUsers: Promise<User[]>;
+  saveUser: Promise<boolean>;
+  deleteUser: Promise<boolean>;
+}
+
+// 我们应该定义好hook会返回什么数据
+const useUser = (): Result => {
+  // 表格所需要的state
+  const [loading, setLoading] = useState(true);
+  const [tableData, setTableData] = useState<User[]>([]);
+
+   // 获取表格数据的方法
+  const fetchUsers = useCallback(() => {
+    setLoading(true);
+    fetch('xxx/getUsers').then((result) => {
+      setLoading(false);
+      setTableData([...result]);
+      return result;
+    })
+  }, []);
+
+  // 新增或保存用户
+  const saveUser = useCallback((newUser: User) => {
+    setLoading(true);
+    return fetch('xxx/saveUser', { body: JSON.stringify(newUser) }).then((result) => {
+      setLoading(false);
+      this.fetchUsers();
+      return result;
+    })
+  }, []);
+
+  // 删除用户
+  const deleteUser = useCallback((id: User['id']) => {
+    setLoading(true);
+    return fetch('xxx/deleteUser', { body: JSON.stringify({ id }) }).then((result) => {
+      setLoading(false);
+      this.fetchUsers();
+      return result;
+    })
+  }, []);
+
+  return {
+    loading,
+    tableData,
+    fetchUsers,
+    saveUser,
+    deleteUser,
+  }
+}
+
+const Table: React.FC = () => {
+  const { loading, tableData, fetchUser, saveUser, deleteUser } = useUser();
+  const history = useHistory();
+
+  const handleDetailClick = useCallback(id => {
+      history.push(`xxx?id=${id}&type=query`);
+    }, [history]);
+
+  const handleEditClick = useCallback(id => {
+    history.push(`xxx?id=${id}&type=edit`);
+  }, [history]);
+
+  const columns = useMemo(() => [
+    {
+      title: 'id',
+      dataIndex: 'id',
+      key: 'id',
+      width: 79,
+    },
+    {
+      title: 'name',
+      dataIndex: 'name',
+    },
+    {
+      title: 'age',
+      dataIndex: 'age',
+    },
+    {
+      title: '操作',
+      key: 'id',
+      render: (text, record) => (
+        <Space>
+          <Button size="small" onClick={() => handleDetailClick(record.id)}>查看</Button>
+          <Button size="small" onClick={() => handleEditClick(record.id)}>编辑</Button>
+          <Button size="small" onClick={() => deleteUser(record.id)}>
+        </Space>
+      ),
+    }
+  ], []);
+
+  useEffect(() => {
+    fetchUser();
+  }, [])
+
+  return (
+    <Spin spinning={loading}>
+      <Table
+        columns={columns}
+        dataSource={tableData}
+      />
+    </Spin>
+  );
+}
+
+```
+但与视图强相关的逻辑依然可以放在组件内，例如上面的查看和编辑，我们认为是与视图强相关并且与 User不相关的，可复用性不高的逻辑。
