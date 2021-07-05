@@ -741,3 +741,265 @@ const foo = (b) => {
 除了修改外部的变量，一个函数在执行过程中还有很多方式可以产生副作用，例如发送Ajax请求，调用DOM API修改页面，甚至console.log也算是副作用。
 
 为什么要煞费苦心的构建纯函数？ 因为纯函数非常靠谱，执行一个函数你不用担心它产生什么副作用，产生不可预料的行为。不管什么情况下，同样的入参都会输出相同的记过。如果你的应用程序大多数函数都是由纯函数组成，那么你的程序测试、调试起来会非常方便。
+
+# context
+Context提供了一种在组件之间共享值的方式，不必显式的通过组件数逐层传递props。
+1. 创建Context
+2. 订阅Context变化
+3. 消费Context
+
+## 创建context
+```javascript
+const MyContext = React.createContext(defaultValue);
+
+```
+
+在默认情况下，Context会在React DevTools中显示为Context.Provider和Context.Consumer。
+![](https://tva1.sinaimg.cn/large/0081Kckwly1gkj1bl8yqrj30fi03k74f.jpg)
+
+为了区分每个Context的命名，可以使用displayName属性：
+```javascript
+MyContext.displayName = 'ThemeContext';
+```
+
+使用后的效果：
+![](https://tva1.sinaimg.cn/large/0081Kckwly1gkj1chhv92j30do034aa8.jpg)
+
+
+使用hook创建context
+```javascript
+
+```
+
+## 订阅Context变化
+每个Context对象都会返回一个Provider组件，它允许消费组件订阅Context的变化。  
+Provider接受一个value属性，传递给消费组件。一个Provider可以和多个消费组件有对应关系，多个Provider也可以嵌套使用，里层的会覆盖外层的数据。
+
+```javascript
+<MyContext.Provider value={/* 某个值 */}>
+```
+
+## 消费Context
+### contextType类组件消费
+```javascript
+class MyClass extends React.Component {
+  /* 任何生命周期 */
+  componentDidMount() {
+    let value = this.context;
+  }
+  render() {
+    let value = this.context;
+  }
+}
+MyClass.contextType = MyContext;
+
+```
+如果使用static语法，可以简化为：
+```javascript
+class MyClass extends React.Component {
+  static contextType = MyContext;
+}
+
+```
+
+### 使用Consumer组件消费
+如果想在函数式组件消费，可以使用Consumer组件。
+```javascript
+<MyContext.Consumer>
+  {value => ReactNode}
+</MyContext.Consumer>
+```
+这种方法需要一个函数作为子元素，这个函数接受当前的context值。并返回一个React节点。
+
+## 动态的Context
+Context的消费值(值是一个引用，不会改变，准确来说是Context的消费值)由defaultValue和Provider上的value决定，如果Provider上的value改变，则Context的消费值也会跟着改变。利用这一点，我们可以修改Context的消费值（在Provider作用域之下）。
+```javascript
+import React , { createContext, useState } from 'react';
+enum Theme {
+  Light = 'light',
+  Dark = 'dark'
+}
+const ThemeContext = createContext(Theme.Dark);
+const Parent: React.FC<{}> = props => {
+  const [state, setState] = useState(theme.Light);
+  const changeStateHanlder = () => {
+    setState((preState) => {
+      return preState === theme.Dark ? theme.Light : theme.Dark;
+    });
+  };
+
+  return (
+    <>
+      <ThemeContext.Provider value={ state }>
+        <Child onClick={ changeStateHanlder } />
+      </ThemeContext.Provider>
+    </>
+  );
+};
+
+interface ChildProps {
+  [props: string]: any;
+};
+
+const Child:React.FC<ChildProps> = props => {
+  return (
+    <ThemeContext.Consumer>
+      { 
+        value => (
+          <button {...props}>{value}</button>
+        )
+      }
+    </ThemeContext.Consumer>
+  )
+}
+
+```
+这种方式需要逐层传递改变Context的方法，为了在嵌套组件中更新Context，我们可以把改变Context的方法也放到Context中：
+```javascript
+...
+const ThemeContext = React.CreateContext({
+  theme: Theme.Light,
+  toggleTheme: () => {}
+});
+
+const Parent: React.FC<{}> = props => {
+  const [state, setState] = useState(theme.Light);
+  const changeStateHanlder = () => {
+    setState((preState) => {
+      return preState === theme.Dark ? theme.Light : theme.Dark;
+    });
+  };
+
+  return (
+    <>
+      <ThemeContext.Provider value={{
+        theme: state,
+        toggleTheme: changeStateHanlder
+      }}>
+        <Child />
+      </ThemeContext.Provider>
+    </>
+  );
+};
+
+...
+
+const Child:React.FC<ChildProps> = props => {
+  return (
+    <ThemeContext.Consumer>
+      { 
+        value => (
+          <button onClick={value.toggleTheme}>{value.theme}</button>
+        )
+      }
+    </ThemeContext.Consumer>
+  )
+}
+
+```
+
+## 消费多个Context
+```javascript
+const ThemeContext = React.CreateContext({
+  theme: Theme.Light,
+  toggleTheme: () => {}
+});
+const UserContext = React.createContext({
+  username: 'johe',
+  toggleName: () => {}
+})
+
+const Parent: React.FC<{}> = props => {
+  const [state, setState] = useState(theme.Light);
+  const [user, setUser] = useState('johe'); 
+  const changeStateHanlder = () => {
+    setState((preState) => {
+      return preState === theme.Dark ? theme.Light : theme.Dark;
+    });
+  };
+  const userHandler = () => {
+    setUser((preState) => {
+      return preState === 'johe' ? 'xjj' : 'johe';
+    })
+  }
+
+  return (
+    <>
+      <ThemeContext.Provider value={{
+        theme: state,
+        toggleTheme: changeStateHanlder
+      }}>
+        <UserContext.Provider value={{
+          username: user,
+          toggleName: userHandler
+        }}>
+          <Child />
+        </UserContext.Provider>
+      </ThemeContext.Provider>
+    </>
+  );
+};
+
+...
+
+const Child:React.FC<ChildProps> = props => {
+  return (
+    <ThemeContext.Consumer>
+      { 
+        value => (
+          <UserContext.Consumer>
+          {
+            user => (
+              <button onClick={value.toggleTheme}>{value.theme}</button>
+              <button onClick={user.toggleName}>
+              {user.username}</button>
+            ) 
+          }
+          </UserContext.Consumer>
+        )
+      }
+    </ThemeContext.Consumer>
+  )
+}
+
+
+```
+
+# 错误边界
+部分 UI 的 JavaScript 错误不应该导致整个应用崩溃，为了解决这个问题，React 16 引入了一个新的概念 —— 错误边界。
+
+错误边界是一种 React 组件，这种组件可以捕获并打印发生在其子组件树任何位置的 JavaScript 错误，并且，它会渲染出备用 UI，而不是渲染那些崩溃了的子组件树。错误边界在渲染期间、生命周期方法和整个组件树的构造函数中捕获错误。
+
+> 如果一个 class 组件中定义了 static getDerivedStateFromError() 或 componentDidCatch() 这两个生命周期方法中的任意一个（或两个）时，那么它就变成一个错误边界。当抛出错误后，请使用 static getDerivedStateFromError() 渲染备用 UI ，使用 componentDidCatch() 打印错误信息。
+
+```javascript
+class ErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false };
+  }
+
+  static getDerivedStateFromError(error) {
+    // 更新 state 使下一次渲染能够显示降级后的 UI
+    return { hasError: true };
+  }
+
+  componentDidCatch(error, errorInfo) {
+    // 你同样可以将错误日志上报给服务器
+    logErrorToMyService(error, errorInfo);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      // 你可以自定义降级后的 UI 并渲染
+      return <h1>Something went wrong.</h1>;
+    }
+
+    return this.props.children; 
+  }
+}
+
+<ErrorBoundary>
+  <MyWidget />
+</ErrorBoundary>
+```
