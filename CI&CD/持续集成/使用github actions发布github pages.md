@@ -184,13 +184,13 @@ jobs:
         git init 
         git add .
         git commit -m "auto build publish"
-    - name: GitHub Push
-      uses: ad-m/github-push-action@v0.6.0
-      with:
-        github_token: ${{ secrets.GITHUB_TOKEN }}
-        branch: gh-pages
-        directory: ./docs/.vuepress/dist
-        force: true
+    - name: Push Github Pages
+        git checkout -b gh-pages
+        git add .
+        git commit -m "auto build publish"
+        git remote add origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/<username>/<repository>.git
+        git remote set-url origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/<username>/<repository>.git
+        git push -f -u origin gh-pages
 ```
 拆解以上`workflows`：
 1. 使用`on`来设置此工作流触发时机，`on.push`指定为代码提交时触发工作流，`on.push.branches`来过滤分支为`main`提交更新时触发工作流。
@@ -218,12 +218,23 @@ jobs:
 
 当我们有了`GITHUB_TOKEN`，可以使用以下命令来推送至远程仓库：
 ```shell
-git push https://<GITHUB_ACCESS_TOKEN>@github.com/<GITHUB_USERNAME>/<REPOSITORY_NAME>.git
+git push https://x-access-token:<GITHUB_ACCESS_TOKEN>@github.com/<GITHUB_USERNAME>/<REPOSITORY_NAME>.git
 ```
 
-这里，又使用了一个第三方的`action`(ad-m/github-push-action@v0.6.0)来帮助我们`push`:
+为了推送至远程的`gh-pages`分支，我们在初始化`git`仓库之后，设置仓库的远程地址为远程仓库地址：
+```shell
+git remote add origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/<username>/<repository>.git
+        git remote set-url origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/<username>/<repository>.git
+```
+
+由于这里的仓库每次都是动态生成的，当我们设置远程地址之后进行推送，会要求先`git pull`代码拉取。我们清楚每次生成的静态页面都是进行覆盖的，所以使用`git push -f`进行强制推送：
+```shell
+git push -f -u origin gh-pages
+```
+
+这里，我们也可以使用一个第三方的`action`(ad-m/github-push-action@v0.6.0)来帮助我们`push`:
 ```yaml
-- name: GitHub Push
+- name: Push Github Pages
       uses: ad-m/github-push-action@v0.6.0
       with:
         # 设置token

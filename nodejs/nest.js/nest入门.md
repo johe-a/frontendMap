@@ -379,7 +379,7 @@ export class AppModule{}
 我们使用 @Module()装饰器将元数据附加到模块类，Nest 现在可以轻松反映必须安装的控制器。
 
 # 提供者Providers
-> Providers是Nest的一个基本概念。许多基本的Nest类可以被视为provider-service,provider-repository,provider-factory,provider-helper等等。他们都可以通过contructor注入依赖关系。这意味着对象之间可以彼此创建各种关系，并且"连接"对象实例的功能在很大程度上可以由Nest运行时系统来完成。  
+> Providers是Nest的一个基本概念。许多基本的Nest类可以被视为provider-service,provider-repository,provider-factory,provider-helper等等。他们都可以通过constructor注入依赖关系。这意味着对象之间可以彼此创建各种关系，并且"连接"对象实例的功能在很大程度上可以由Nest运行时系统来完成。  
 > Provider只是一个用@Injectable()装饰器注释的类
 
 ## 服务
