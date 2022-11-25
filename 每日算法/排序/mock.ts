@@ -1,0 +1,1 @@
+export const mockArr: number[] = [1,3,6,-1,2,5,7];
