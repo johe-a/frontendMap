@@ -15,8 +15,9 @@ Worker 线程一旦新建成功，就会始终运行，不会被主线程上的�
 - 同源限制：分配给Worker线程运行的脚本文件，必须与主线程的脚本文件同源
 - DOM限制：Worker线程没法操作和读取主线程所在的DOM对象，也无法使用document、window、parent这些对象，但是Worker线程可以访问navigator对象和location对象
 - Worker和主线程不能直接通信，需要通过消息完成
-- 脚本限制：不能指向alrt()和confirm方法
+- 脚本限制：不能指向alert()和confirm方法
 - 文件限制：加载的脚本必须来自网络，不能为本地文件
+
 
 ## API
 构造函数:
@@ -123,6 +124,16 @@ worker.postMessage(ab, [ab]);
 ## 在页面内创建Web Worker
 通常情况下，Worker 载入的是一个单独的 JavaScript 脚本文件，但是也可以载入与主线程在同一个网页的代码。
 
+由于`webWorker`规定加载的脚本必须来自网络，不能为本地文件，所以会在开发过程中给我们调试带来困难。但是我们可以用一种`hack`的方式来替代，通过`URL.createObjectURL()`方法，传入二进制文件对象`Blob`或者`File`，可以生成一个指向源对象的`URL`。
+
+```javascript
+function worker_function() {
+    // all worker code here
+}
+var worker = new Worker(URL.createObjectURL(new Blob(["("+worker_function.toString()+")()"], {type: 'text/javascript'})));
+
+```
+> 注意，当`webWorker`不再使用的时候，也同时不再需要对应的`URL`对象，每个对象需要调用`URL.revokeObjectURL()`来释放内存。
 ### 通过script标签
 ```javascript
 <body>
@@ -284,4 +295,50 @@ onmessage = function(e) {
     }        
 }
 
+```
+
+# worker链接池
+```javascript
+class WorkerLoader {
+    private workerPool = [];
+    constructor(private concurrency: number = window.navigator.hardwareConcurrency || 2) {}
+    public load(url: string): Mesh {
+        const workerInfo = this.getWorker();
+        workerInfo.tasks++;
+        return workerInfo.worker.load(url)
+            .then(data => {
+                workerInfo.tasks--;
+                this.clearIdleWorker(workerInfo);
+                return this.parseData(data);
+            });
+    }
+    private getWorker() {
+        if (this.workers.length < this.concurrency) {
+            const worker = {
+                tasks: 0,
+                clean: null,
+                worker: new Worker(),
+            };
+            this.workerPool.push(worker);
+            return worker;
+        }
+        return this.getIdlerWorker();
+    }
+    private getIdleWorker() {
+        return this.workerPool.sort((worker1, worker2) => worker1.tasks - worker2.tasks)[0];
+    }
+    private parseData(data): Mesh {
+        // ...
+    }
+    private clearIdleWorker(workerItem) {
+        clearTimeout(workerItem.clean);
+        workerItem.clean = setTimeout(() => {
+            if (!workerItem.tasks) {
+                workerItem.worker.terminate();
+                workerItem.worker = null;
+                this.workerPool = this.workerPool.filter(worker => woeker !== workerItem);
+            }
+        }, 5000);
+    }
+}
 ```
